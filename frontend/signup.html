@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flux Revenue - Cadastro</title>
+    
+    <!-- ✅ BIBLIOTECAS NECESSÁRIAS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Caminho ajustado para onde configv2.js estará -->
+    <script src="/supabase/configv2.js"></script>
+    <script type="module" src="/supabase/flux-supabase.js"></script>
+    
+    <!-- ✅ CSS INLINE: Manter o estilo "Jony Ive" -->
+    <style>
+        /* Copie e cole o CSS do seu signup.html original que define o estilo visual */
+        /* Certifique-se de que não há chamadas a APIs ou scripts aqui, apenas CSS */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex; /* Adicionado para centralizar conteúdo */
+            align-items: center; /* Adicionado para centralizar conteúdo */
+            justify-content: center; /* Adicionado para centralizar conteúdo */
+            padding: 4px; /* Pequeno padding para evitar encostar nas bordas */
+        }
+        
+        /* ... todo o seu CSS do signup.html original que define .glass-card, .input-field, etc. ... */
+        
+        .message-box { /* Novo estilo para mensagens de erro/sucesso */
+            padding: 1rem;
+            border-radius: 0.75rem; /* rounded-xl */
+            text-align: center;
+            font-size: 0.875rem; /* text-sm */
+            margin-top: 1.5rem; /* mt-6 */
+            margin-bottom: 1.5rem; /* mb-6 */
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.2); /* bg-red-500 bg-opacity-20 */
+            border: 1px solid rgba(239, 68, 68, 0.3); /* border-red-400 border-opacity-30 */
+            color: #fca5a5; /* text-red-200 */
+        }
+
+        .success-message {
+            background: rgba(16, 185, 129, 0.2); /* bg-green-500 bg-opacity-20 */
+            border: 1px solid rgba(16, 185, 129, 0.3); /* border-green-400 border-opacity-30 */
+            color: #a7f3d0; /* text-green-200 */
+        }
+
+        .hidden { display: none; }
+        .loading-spinner { /* Estilo para o spinner de carregamento */
+            display: inline-block;
+            width: 1.25rem; /* w-5 */
+            height: 1.25rem; /* h-5 */
+            border: 2px solid currentColor;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem; /* mr-2 */
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4 relative overflow-hidden">
+    <!-- Seu HTML do corpo do signup.html (sem o script final) -->
+    <!-- Certifique-se de que os IDs dos campos de input sejam 'email', 'password' e 'company' -->
+    <!-- E que os IDs das divs de mensagem sejam 'errorMessage' e 'successMessage' -->
+    <div class="relative z-10 w-full max-w-md">
+        <!-- Main Card -->
+        <div class="glass-card rounded-3xl p-8">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white bg-opacity-20 mb-6">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                <h1 class="text-4xl font-light text-white mb-2 tracking-tight">Flux</h1>
+                <p class="text-white text-opacity-80 font-light text-lg mb-4">Revenue reimaginado</p>
+                
+                <!-- Trial Badge -->
+                <div class="inline-flex items-center badge rounded-full px-4 py-2">
+                    <svg class="w-4 h-4 text-green-300 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span class="text-green-200 text-sm font-medium">7 dias gratuitos</span>
+                </div>
+            </div>
+
+            <!-- Form -->
+            <form id="signupForm" class="space-y-6">
+                <div class="space-y-4">
+                    <div>
+                        <input 
+                            id="company" 
+                            name="company"
+                            type="text" 
+                            required 
+                            placeholder="Nome da Empresa"
+                            autocomplete="organization"
+                            class="input-field w-full px-6 py-4 rounded-2xl text-white placeholder-white placeholder-opacity-60 focus:outline-none"
+                        >
+                    </div>
+
+                    <div>
+                        <input 
+                            id="email" 
+                            name="email"
+                            type="email" 
+                            required 
+                            placeholder="Email"
+                            autocomplete="email"
+                            class="input-field w-full px-6 py-4 rounded-2xl text-white placeholder-white placeholder-opacity-60 focus:outline-none"
+                        >
+                    </div>
+                    
+                    <div>
+                        <input 
+                            id="password" 
+                            name="password"
+                            type="password" 
+                            required 
+                            minlength="6"
+                            placeholder="Senha (mín. 6 caracteres)"
+                            autocomplete="new-password"
+                            class="input-field w-full px-6 py-4 rounded-2xl text-white placeholder-white placeholder-opacity-60 focus:outline-none"
+                        >
+                    </div>
+                    
+                    <!-- Novo campo de Confirmação de Senha -->
+                    <div>
+                        <input 
+                            id="confirmPassword" 
+                            name="confirmPassword"
+                            type="password" 
+                            required 
+                            minlength="6"
+                            placeholder="Confirmar Senha"
+                            autocomplete="new-password"
+                            class="input-field w-full px-6 py-4 rounded-2xl text-white placeholder-white placeholder-opacity-60 focus:outline-none"
+                        >
+                    </div>
+                </div>
+
+                <button 
+                    type="submit" 
+                    id="signupBtn"
+                    class="btn-primary w-full py-4 rounded-2xl text-white font-medium text-lg disabled:opacity-50"
+                >
+                    Começar Grátis
+                </button>
+
+                <!-- Mensagens -->
+                <div id="errorMessage" class="message-box error-message hidden"></div>
+                <div id="successMessage" class="message-box success-message hidden"></div>
+
+                <!-- Terms -->
+                <p class="text-white text-opacity-60 text-xs text-center leading-relaxed">
+                    Ao criar uma conta, você concorda com nossos 
+                    <a href="#" class="text-white underline decoration-white decoration-opacity-50">Termos de Uso</a> e 
+                    <a href="#" class="text-white underline decoration-white decoration-opacity-50">Política de Privacidade</a>
+                </p>
+            </form>
+
+            <!-- Navigation -->
+            <div class="mt-8 space-y-6">
+                <div class="text-center">
+                    <p class="text-white text-opacity-80 text-sm">
+                        Já tem conta? 
+                        <a href="login.html" class="text-white font-medium hover:text-opacity-80 transition-opacity underline decoration-white decoration-opacity-50">
+                            Faça login
+                        </a>
+                    </p>
+                </div>
+                
+                <div class="text-center">
+                    <a href="/" class="inline-flex items-center text-white text-opacity-60 text-sm hover:text-opacity-80 transition-opacity">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                        </svg>
+                        Voltar ao início
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Decorative Elements -->
+        <div class="absolute -top-4 -right-4 w-3 h-3 rounded-full bg-white opacity-40"></div>
+        <div class="absolute -bottom-4 -left-4 w-2 h-2 rounded-full bg-white opacity-30"></div>
+    </div>
+    
+    <!-- ✅ SCRIPT DE AUTENTICAÇÃO -->
+    <script>
+        // ✅ Aguarda o carregamento completo do DOM e das configurações globais do Flux
+        document.addEventListener('DOMContentLoaded', function() {
+            const signupForm = document.getElementById('signupForm');
+            const signupBtn = document.getElementById('signupBtn');
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
+
+            // Função auxiliar para mostrar mensagem de erro
+            function showMessage(element, message, isError = true) {
+                element.textContent = message;
+                element.classList.remove('hidden');
+                if (isError) {
+                    element.classList.add('error-message');
+                    element.classList.remove('success-message');
+                } else {
+                    element.classList.add('success-message');
+                    element.classList.remove('error-message');
+                }
+            }
+
+            // Função para ocultar todas as mensagens
+            function hideMessages() {
+                errorMessage.classList.add('hidden');
+                successMessage.classList.add('hidden');
+            }
+
+            // Função para atualizar o estado do botão
+            function setLoading(isLoading) {
+                signupBtn.disabled = isLoading;
+                signupBtn.innerHTML = isLoading ? `
+                    <div class="flex items-center justify-center">
+                        <svg class="loading-spinner" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Criando conta...
+                    </div>
+                ` : 'Começar Grátis';
+            }
+
+            // Espera as configurações globais do Flux estarem prontas
+            async function initializeSignupPage() {
+                let attempts = 0;
+                const maxAttempts = 50; // 5 segundos de timeout
+                while (!window.fluxConfig || !window.fluxSupabase || !window.fluxManagers || !window.fluxManagers.auth && attempts < maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    attempts++;
+                }
+
+                if (!window.fluxConfig || !window.fluxSupabase || !window.fluxManagers || !window.fluxManagers.auth) {
+                    showMessage(errorMessage, "Erro: Configurações do Flux Revenue não carregaram. Tente recarregar a página.", true);
+                    setLoading(false);
+                    return;
+                }
+
+                // Verifica se o usuário já está logado e redireciona
+                const user = await window.fluxManagers.auth.getCurrentUser();
+                if (user) {
+                    showMessage(successMessage, "Você já está logado. Redirecionando...", false);
+                    setTimeout(() => {
+                        window.location.href = window.fluxConfig.app.url;
+                    }, 1000);
+                    return;
+                }
+
+                // Event Listener para o formulário de cadastro
+                signupForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    hideMessages();
+                    setLoading(true);
+
+                    const company = document.getElementById('company').value;
+                    const email = document.getElementById('email').value;
+                    const password = document.getElementById('password').value;
+                    const confirmPassword = document.getElementById('confirmPassword').value;
+
+                    if (password !== confirmPassword) {
+                        showMessage(errorMessage, 'As senhas não coincidem.', true);
+                        setLoading(false);
+                        return;
+                    }
+
+                    try {
+                        // Usar o método signUp do nosso AuthManager
+                        const { data, error } = await window.fluxSupabase.auth.signUp({
+                            email: email,
+                            password: password,
+                            options: {
+                                data: {
+                                    full_name: company, // Supondo que 'company' é o nome completo
+                                    company_name: company, // Novo campo para o nome da empresa
+                                    plan: 'trial' // Define o plano inicial
+                                }
+                            }
+                        });
+
+                        if (error) throw error;
+
+                        if (data.user) {
+                            if (data.session) {
+                                // Se o login for automático (sem confirmação de email)
+                                showMessage(successMessage, 'Conta criada e login realizado com sucesso! Redirecionando...', false);
+                                setTimeout(() => {
+                                    window.location.href = window.fluxConfig.app.url;
+                                }, 1500);
+                            } else {
+                                // Se precisar de confirmação de email
+                                showMessage(successMessage, 'Conta criada! Verifique seu e-mail para confirmar a conta antes de fazer login.', false);
+                                setTimeout(() => {
+                                    window.location.href = window.fluxConfig.app.loginUrl; // Redireciona para o login
+                                }, 3000);
+                            }
+                        } else {
+                            showMessage(errorMessage, 'Erro ao criar conta. Nenhum usuário foi retornado.', true);
+                        }
+
+                    } catch (error) {
+                        let errorMsg = 'Erro ao criar conta. Tente novamente.';
+                        if (error instanceof Error) {
+                            if (error.message.includes('User already registered')) {
+                                errorMsg = 'Este e-mail já está cadastrado. Faça login.';
+                            } else if (error.message.includes('AuthApiError: Invalid email')) {
+                                errorMsg = 'E-mail inválido. Verifique o formato.';
+                            } else if (error.message.includes('Password should be at least 6 characters')) {
+                                errorMsg = 'A senha deve ter pelo menos 6 caracteres.';
+                            } else if (error.message.includes('network')) {
+                                errorMsg = 'Erro de conexão. Verifique sua internet.';
+                            }
+                            showMessage(errorMessage, errorMsg, true);
+                        } else {
+                            showMessage(errorMessage, 'Erro desconhecido ao criar conta.', true);
+                        }
+                    } finally {
+                        setLoading(false);
+                    }
+                });
+            }
+            
+            // Inicia o processo de inicialização da página
+            initializeSignupPage();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+/* src/components/ErrorMessage.css */
+.error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+}
+
+.error-message-card {
+  background: #FFFFFF;
+  border: 1px solid #FF3B30;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.error-message-inline {
+  background: #FFF5F5;
+  border: 1px solid #FED7D7;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.error-message-banner {
+  background: #FFF5F5;
+  border-left: 4px solid #FF3B30;
+  padding: 16px;
+  border-radius: 0 8px 8px 0;
+}
+
+.error-message-warning {
+  border-color: #FF9F0A;
+}
+
+.error-message-warning.error-message-card {
+  border-color: #FF9F0A;
+}
+
+.error-message-warning.error-message-inline {
+  background: #FFFBF0;
+  border-color: #FED7AA;
+}
+
+.error-message-warning.error-message-banner {
+  background: #FFFBF0;
+  border-left-color: #FF9F0A;
+}
+
+.error-message-info {
+  border-color: #007AFF;
+}
+
+.error-message-info.error-message-card {
+  border-color: #007AFF;
+}
+
+.error-message-info.error-message-inline {
+  background: #F0F8FF;
+  border-color: #B3D9FF;
+}
+
+.error-message-info.error-message-banner {
+  background: #F0F8FF;
+  border-left-color: #007AFF;
+}
+
+.error-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.error-content {
+  flex: 1;
+}
+
+.error-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1D1D1F;
+  margin: 0 0 4px 0;
+}
+
+.error-text {
+  font-size: 14px;
+  color: #6C6C70;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.error-retry-button {
+  background: #007AFF;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.error-retry-button:hover {
+  background: #0056CC;
+}
+
+.error-retry-button:active {
+  background: #004499;
+  transform: scale(0.98);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .error-message-card {
+    background: #1C1C1E;
+    border-color: #FF453A;
+  }
+  
+  .error-message-inline {
+    background: #2C1B1B;
+    border-color: #5C2B2B;
+  }
+  
+  .error-message-banner {
+    background: #2C1B1B;
+    border-left-color: #FF453A;
+  }
+  
+  .error-title {
+    color: #FFFFFF;
+  }
+  
+  .error-text {
+    color: #AEAEB2;
+  }
+}
