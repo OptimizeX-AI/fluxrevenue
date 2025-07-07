@@ -44,7 +44,8 @@ const getConfig = (): FluxSupabaseConfig => {
   const isDevelopment = process.env.NODE_ENV === 'development';
   // A lógica para staging pode precisar ser ajustada se não houver uma variável de ambiente específica para isso.
   // Por enquanto, vamos assumir que qualquer coisa que não seja 'development' é 'production' para o cookieDomain.
-  const isStaging = window.location.hostname.includes('staging') || window.location.hostname.includes('dev');
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  const isStaging = hostname.includes('staging') || hostname.includes('dev');
 
   let environment: 'development' | 'staging' | 'production';
   if (isDevelopment) {
@@ -62,24 +63,24 @@ const getConfig = (): FluxSupabaseConfig => {
     debug: isDevelopment, // Habilitar debug apenas em desenvolvimento
     retryAttempts: 3,
     retryDelay: 1000,
-    // Ajuste para cookieDomain: localhost para desenvolvimento, .fluxrevenue.com.br para outros.
     cookieDomain: isDevelopment ? 'localhost' : '.fluxrevenue.com.br'
   };
 };
 
 // === STORAGE CUSTOMIZADO CROSS-DOMAIN (Mantido como estava, mas usará config atualizada) ===
 const createCustomStorage = (): CustomStorage => {
-  const config = getConfig(); // getConfig agora lê de process.env
+  const config = getConfig();
   
   return {
     getItem: (key: string): string | null => {
       try {
-        const localValue = localStorage.getItem(key);
+        const localValue = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
         if (localValue) return localValue;
         
-        const cookie = document.cookie.split(';').find(c => c.trim().startsWith(`${key}=`));
-        if (cookie) return decodeURIComponent(cookie.split('=')[1]);
-        
+        if (typeof document !== 'undefined') {
+            const cookie = document.cookie.split(';').find(c => c.trim().startsWith(`${key}=`));
+            if (cookie) return decodeURIComponent(cookie.split('=')[1]);
+        }
         return null;
       } catch (error) {
         console.warn(`⚠️ Erro ao ler storage [${key}]:`, error);
@@ -88,20 +89,28 @@ const createCustomStorage = (): CustomStorage => {
     },
     setItem: (key: string, value: string): void => {
       try {
-        localStorage.setItem(key, value);
-        const maxAge = 365 * 24 * 60 * 60; // 1 ano
-        const secure = window.location.protocol === 'https:';
-        const domain = config.cookieDomain;
-        document.cookie = `${key}=${encodeURIComponent(value)}; Domain=${domain}; Path=/; Max-Age=${maxAge}; SameSite=Lax; ${secure ? 'Secure' : ''}`;
-        if (config.debug) console.log(`✅ Storage salvo [${key}] domain=${domain}`);
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(key, value);
+        }
+        if (typeof document !== 'undefined') {
+            const maxAge = 365 * 24 * 60 * 60;
+            const secure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+            const domain = config.cookieDomain;
+            document.cookie = `${key}=${encodeURIComponent(value)}; Domain=${domain}; Path=/; Max-Age=${maxAge}; SameSite=Lax; ${secure ? 'Secure' : ''}`;
+            if (config.debug) console.log(`✅ Storage salvo [${key}] domain=${domain}`);
+        }
       } catch (error) { console.error(`❌ Erro ao salvar storage [${key}]:`, error); }
     },
     removeItem: (key: string): void => {
       try {
-        localStorage.removeItem(key);
-        const domain = config.cookieDomain;
-        document.cookie = `${key}=; Domain=${domain}; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-        if (config.debug) console.log(`🗑️ Storage removido [${key}]`);
+        if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem(key);
+        }
+        if (typeof document !== 'undefined') {
+            const domain = config.cookieDomain;
+            document.cookie = `${key}=; Domain=${domain}; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+            if (config.debug) console.log(`🗑️ Storage removido [${key}]`);
+        }
       } catch (error) { console.error(`❌ Erro ao remover storage [${key}]:`, error); }
     }
   };
@@ -110,42 +119,43 @@ const createCustomStorage = (): CustomStorage => {
 // === HEALTH CHECK SISTEMA (Mantido como estava) ===
 class SupabaseHealthMonitor {
   private health: ConnectionHealth = { isConnected: false, lastCheck: 0, errorCount: 0, latency: 0 };
-  async checkHealth(client: SupabaseClient): Promise<ConnectionHealth> { /* ... (sem mudanças) ... */ const startTime = performance.now(); try { const { error } = await client.from('clients').select('id').limit(1); const latency = performance.now() - startTime; this.health = { isConnected: !error, lastCheck: Date.now(), errorCount: error ? this.health.errorCount + 1 : 0, latency }; if (error) { console.warn('⚠️ Supabase health check failed:', error); } } catch (error) { console.error('❌ Health check error:', error); this.health = { isConnected: false, lastCheck: Date.now(), errorCount: this.health.errorCount + 1, latency: 0 }; } return this.health; }
+  async checkHealth(client: SupabaseClient): Promise<ConnectionHealth> {  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now(); try { const { error } = await client.from('clients').select('id', {count: 'exact', head: true}).limit(1); const latency = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime; this.health = { isConnected: !error, lastCheck: Date.now(), errorCount: error ? this.health.errorCount + 1 : 0, latency }; if (error) { console.warn('⚠️ Supabase health check failed:', error); } } catch (error) { console.error('❌ Health check error:', error); this.health = { isConnected: false, lastCheck: Date.now(), errorCount: this.health.errorCount + 1, latency: 0 }; } return this.health; }
   getHealth = (): ConnectionHealth => this.health;
 }
 
 // === RETRY LOGIC ENTERPRISE (Mantido como estava) ===
-const withRetry = async <T>(fn: () => Promise<T>, maxAttempts: number = 3, delay: number = 1000): Promise<T> => { /* ... (sem mudanças) ... */ let lastError: Error | null = null; for (let attempt = 1; attempt <= maxAttempts; attempt++) { try { return await fn(); } catch (error) { lastError = error as Error; console.warn(`⚠️ Tentativa ${attempt}/${maxAttempts} falhou:`, error); if (attempt === maxAttempts) break; const waitTime = delay * Math.pow(2, attempt - 1); await new Promise(resolve => setTimeout(resolve, waitTime)); } } throw lastError || new Error('Operação falhou após múltiplas tentativas'); };
+const withRetry = async <T>(fn: () => Promise<T>, maxAttempts: number = 3, delay: number = 1000): Promise<T> => {  let lastError: Error | null = null; for (let attempt = 1; attempt <= maxAttempts; attempt++) { try { return await fn(); } catch (error) { lastError = error as Error; console.warn(`⚠️ Tentativa ${attempt}/${maxAttempts} falhou:`, error); if (attempt === maxAttempts) break; const waitTime = delay * Math.pow(2, attempt - 1); await new Promise(resolve => setTimeout(resolve, waitTime)); } } throw lastError || new Error('Operação falhou após múltiplas tentativas'); };
 
 // === BROWSER CAPABILITIES (Mantido como estava) ===
-const checkBrowserCapabilities = () => { /* ... (sem mudanças) ... */ const capabilities = { localStorage: false, sessionStorage: false, cookies: false, indexedDB: false, webAssembly: false }; try { capabilities.localStorage = typeof localStorage !== 'undefined'; capabilities.sessionStorage = typeof sessionStorage !== 'undefined'; capabilities.cookies = navigator.cookieEnabled; capabilities.indexedDB = typeof indexedDB !== 'undefined'; capabilities.webAssembly = typeof WebAssembly !== 'undefined'; } catch (error) { console.warn('⚠️ Erro verificando capabilities:', error); } return capabilities; };
+const checkBrowserCapabilities = () => {  const capabilities = { localStorage: false, sessionStorage: false, cookies: false, indexedDB: false, webAssembly: false }; try { capabilities.localStorage = typeof localStorage !== 'undefined'; capabilities.sessionStorage = typeof sessionStorage !== 'undefined'; capabilities.cookies = typeof navigator !== 'undefined' && navigator.cookieEnabled; capabilities.indexedDB = typeof indexedDB !== 'undefined'; capabilities.webAssembly = typeof WebAssembly !== 'undefined'; } catch (error) { console.warn('⚠️ Erro verificando capabilities:', error); } return capabilities; };
 
 // === SINGLETON CLIENT ===
 let supabaseInstance: SupabaseClient<Database> | null = null;
-let healthMonitor: SupabaseHealthMonitor | null = null;
+let healthMonitorInstance: SupabaseHealthMonitor | null = null; // Renomeado para evitar conflito
 
 const createSupabaseClientOnce = (): SupabaseClient<Database> => {
   if (supabaseInstance) {
     return supabaseInstance;
   }
 
-  const config = getConfig(); // Agora lê de process.env
+  const config = getConfig();
   const capabilities = checkBrowserCapabilities();
   
   if (config.debug) {
     console.log('🔧 Inicializando Supabase Client:', {
       environment: config.environment,
-      url: config.url, // Logar a URL usada
+      urlUsed: config.url,
+      anonKeyUsed: config.anonKey ? `${config.anonKey.substring(0, 10)}...` : 'N/A', // Logar apenas parte da chave
       capabilities,
-      domain: config.cookieDomain
+      cookieDomain: config.cookieDomain
     });
   }
 
   const client = createBrowserClient<Database>(config.url, config.anonKey, {
     auth: {
       persistSession: true,
-      detectSessionInUrl: true, // Importante para fluxos OAuth e PKCE
-      storageKey: `sb-flux-session`, // Padronizado anteriormente
+      detectSessionInUrl: true,
+      storageKey: `sb-flux-session`,
       autoRefreshToken: true,
       flowType: 'pkce',
       debug: config.debug,
@@ -154,16 +164,18 @@ const createSupabaseClientOnce = (): SupabaseClient<Database> => {
     global: {
       headers: {
         'X-Client-Info': 'flux-revenue-dashboard',
-        'X-Client-Version': '2.0.1', // Version bump
+        'X-Client-Version': '2.0.2', // Version bump
         'X-Environment': config.environment
       }
     },
     realtime: { params: { eventsPerSecond: 10 } }
   });
 
-  healthMonitor = new SupabaseHealthMonitor();
-  setTimeout(() => { healthMonitor?.checkHealth(client); }, 2000);
-  setInterval(() => { healthMonitor?.checkHealth(client); }, 5 * 60 * 1000);
+  if (typeof window !== 'undefined') { // Health check só no browser
+    healthMonitorInstance = new SupabaseHealthMonitor();
+    setTimeout(() => { healthMonitorInstance?.checkHealth(client); }, 2000);
+    setInterval(() => { healthMonitorInstance?.checkHealth(client); }, 5 * 60 * 1000);
+  }
 
   supabaseInstance = client;
   if (config.debug) {
@@ -173,14 +185,15 @@ const createSupabaseClientOnce = (): SupabaseClient<Database> => {
 };
 
 // === QUERY HELPERS ENTERPRISE (Mantidos como estavam) ===
-export const createQuery = <T>(queryFn: () => Promise<T>) => { /* ... (sem mudanças) ... */ return withRetry(queryFn, getConfig().retryAttempts, getConfig().retryDelay); };
-export const getConnectionHealth = (): ConnectionHealth | null => { /* ... (sem mudanças) ... */ return healthMonitor?.getHealth() || null; };
-export const refreshHealthCheck = async (): Promise<ConnectionHealth | null> => { /* ... (sem mudanças) ... */ if (!healthMonitor || !supabaseInstance) return null; return await healthMonitor.checkHealth(supabaseInstance); };
+export const createQuery = <T>(queryFn: () => Promise<T>) => {  return withRetry(queryFn, getConfig().retryAttempts, getConfig().retryDelay); };
+export const getConnectionHealth = (): ConnectionHealth | null => {  return healthMonitorInstance?.getHealth() || null; };
+export const refreshHealthCheck = async (): Promise<ConnectionHealth | null> => {  if (!healthMonitorInstance || !supabaseInstance) return null; return await healthMonitorInstance.checkHealth(supabaseInstance); };
 
 // === EXPORTS ===
 export const supabase = createSupabaseClientOnce();
 export type SupabaseClientType = typeof supabase;
-// export default supabase; // Removido para consistência, usar export nomeado
 
-// Global error handler (Mantido como estava)
-window.addEventListener('unhandledrejection', (event) => { /* ... (sem mudanças) ... */ if (event.reason?.message?.includes('supabase') || event.reason?.message?.includes('postgrest')) { console.error('❌ Supabase unhandled error:', event.reason); if (healthMonitor) { const currentHealth = healthMonitor.getHealth(); currentHealth.errorCount += 1; } } });
+// Global error handler (Mantido como estava, mas com verificação de window)
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {  if (event.reason?.message?.includes('supabase') || event.reason?.message?.includes('postgrest')) { console.error('❌ Supabase unhandled error:', event.reason); if (healthMonitorInstance) { const currentHealth = healthMonitorInstance.getHealth(); currentHealth.errorCount += 1; } } });
+}

@@ -1,18 +1,20 @@
 // src/contexts/AuthContext.tsx - ENTERPRISE AUTH SYSTEM REFAVORADO
 
-import React, { createContext, useContext, useEffect, useState, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
-import { useFluxData } from '../hooks/useFluxData'; // Importar useFluxData
+import { useFluxData } from '../hooks/useFluxData';
+import { UserProfileData } from '../types/interfaces'; // Para tipar userProfile
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  loading: boolean; // Loading do AuthContext (inicialização da sessão)
-  isReady: boolean;   // Se a sessão inicial do Supabase Auth foi verificada
+  loading: boolean;
+  isReady: boolean;
   user: User | null;
-  userPlan: string; // Derivado do useFluxData.userProfile
+  userProfile: UserProfileData | null; // Expor o perfil completo
+  userPlan: string;
   session: Session | null;
-  canPerformAction?: (action: string) => boolean;
+  canPerformAction: (action: string) => boolean; // Removido '?' pois sempre será definida
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
@@ -23,39 +25,34 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [authLoading, setAuthLoading] = useState(true); // Renomeado para evitar conflito com loading do useFluxData
-  const [isAuthReady, setIsAuthReady] = useState(false); // Renomeado
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   
-  const fluxData = useFluxData(); // Consumir o hook useFluxData
+  const { userProfile: fluxUserProfile, loading: fluxDataLoading, updateUserProfile } = useFluxData();
 
   const isMountedRef = useRef(true);
   const lastSessionTokenRef = useRef<string | null>(null);
-  const authSubscriptionRef = useRef<any>(null);
+  const authSubscriptionRef = useRef<any>(null); // Supabase v2 retorna { data: { subscription } }, não um objeto direto
 
-  // User plan é agora derivado do useFluxData.userProfile
+  // userPlan é derivado do fluxUserProfile
   const userPlan = useMemo(() => {
-    if (fluxData.userProfile?.plan) {
-      // Lógica para verificar se o trial expirou (se ainda for responsabilidade do frontend)
-      // Esta lógica idealmente estaria no backend ou numa função do useFluxData chamada periodicamente.
-      // Por simplicidade, vamos assumir que useFluxData.userProfile.plan já reflete o plano correto.
-      // Se a lógica de expiração de trial do AuthContext original for mantida, ela precisaria ser adaptada aqui
-      // para usar fluxData.userProfile.trial_end_date e possivelmente chamar fluxData.updateUserProfile.
-      // Exemplo simplificado:
-      if (fluxData.userProfile.plan === 'trial' && fluxData.userProfile.trial_end_date) {
-        const trialEnd = new Date(fluxData.userProfile.trial_end_date);
+    if (fluxUserProfile?.plan) {
+      if (fluxUserProfile.plan === 'trial' && fluxUserProfile.trial_end_date) {
+        const trialEnd = new Date(fluxUserProfile.trial_end_date);
         const now = new Date();
-        if (now > trialEnd) {
-          console.log('⚠️ AuthContext via useFluxData: Trial expirado, considerando como free para permissões.');
-          // A atualização para 'free' no DB deve ser feita pelo useFluxData.updateUserProfile ou backend.
+        if (now > trialEnd && fluxUserProfile.subscription_status === 'trialing') {
+          console.log('⚠️ AuthContext (via useFluxData): Trial expirado, considerando como free para permissões.');
+          // A atualização real do DB para 'free' / 'expired_trial' é feita pela EF check-trial-status
+          // ou poderia ser disparada aqui via `updateUserProfile({ plan: 'free', subscription_status: 'expired_trial' })`
+          // mas é melhor que check-trial-status seja a fonte da verdade para essa transição.
           return 'free';
         }
       }
-      return fluxData.userProfile.plan;
+      return fluxUserProfile.plan;
     }
-    return 'free'; // Fallback
-  }, [fluxData.userProfile]);
+    return 'free'; // Fallback se não houver usuário ou plano
+  }, [fluxUserProfile]);
 
-  // REMOVIDO: useEffect para fetchUserPlan, pois userPlan agora vem de useFluxData
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -64,7 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initializeAuth = async () => {
       try {
         if (!isMountedRef.current) return;
-        setAuthLoading(true); // Inicia o loading da autenticação
+        setAuthLoading(true);
 
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
@@ -73,19 +70,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setSession(initialSession);
         setUser(initialSession?.user ?? null);
-        setIsAuthReady(true); // Autenticação do Supabase está pronta
-        setAuthLoading(false); // Finaliza o loading da autenticação
+        setIsAuthReady(true);
+        setAuthLoading(false);
         
         if (initialSession?.access_token) {
           lastSessionTokenRef.current = initialSession.access_token;
         }
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        const { data: supabaseSubscription } = supabase.auth.onAuthStateChange( // Corrigido para pegar o objeto de subscription
           (event: AuthChangeEvent, newSession: Session | null) => {
             if (!isMountedRef.current) return;
 
+            console.log('🔐 AuthContext: Auth state change:', event, {userId: newSession?.user?.id});
+
             const tokenChanged = newSession?.access_token !== lastSessionTokenRef.current;
-            if (tokenChanged || event === 'SIGNED_OUT') {
+            if (tokenChanged || event === 'SIGNED_OUT' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
               setSession(newSession);
               setUser(newSession?.user ?? null);
               
@@ -95,15 +94,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 lastSessionTokenRef.current = null;
               }
             }
-            // Se deslogar, o userPlan será 'free' devido à ausência de fluxData.userProfile.
-            // Se logar, o useEffect do useFluxData que depende de user.id vai buscar o userProfile,
-            // e o userPlan aqui será atualizado reativamente.
             
             if (!isAuthReady) setIsAuthReady(true);
-            setAuthLoading(false); // Garante que o loading termine após qualquer mudança
+            setAuthLoading(false);
           }
         );
-        authSubscriptionRef.current = subscription;
+        authSubscriptionRef.current = supabaseSubscription; // Armazenar o objeto de subscription
+
       } catch (error) {
         console.error('❌ AuthContext: Erro crítico na inicialização:', error);
         if (isMountedRef.current) {
@@ -124,44 +121,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMountedRef.current = false;
       clearTimeout(initializationTimeout);
-      if (authSubscriptionRef.current) {
+      if (authSubscriptionRef.current && typeof authSubscriptionRef.current.unsubscribe === 'function') { // Verificar se é um objeto de subscription
         authSubscriptionRef.current.unsubscribe();
-        authSubscriptionRef.current = null;
       }
+      authSubscriptionRef.current = null;
     };
-  }, [isAuthReady]); // Dependência simplificada, pois o user não afeta mais diretamente o fetch de plano aqui
+  }, [isAuthReady]); // Removido user.id daqui, pois o plano vem do fluxData que reage a user.id
 
-  const login = async (email: string, password: string): Promise<void> => { /* ... (sem mudanças) ... */ setAuthLoading(true); try { const { error } = await supabase.auth.signInWithPassword({ email, password }); if (error) throw error; console.log('✅ AuthContext: Login realizado com sucesso'); /* O onAuthStateChange e o useFluxData (via user.id) farão o resto */ } catch (error) { console.error('❌ AuthContext: Erro no login:', error); throw error; } finally { setAuthLoading(false); } };
-  const logout = async (): Promise<void> => { /* ... (sem mudanças, exceto que setUserPlan não é mais chamado aqui diretamente) ... */ setAuthLoading(true); try { const { error } = await supabase.auth.signOut(); if (error) throw error; console.log('✅ AuthContext: Logout realizado com sucesso'); setUser(null); setSession(null); lastSessionTokenRef.current = null; /* userPlan será 'free' automaticamente pois fluxData.userProfile será null */ } catch (error) { console.error('❌ AuthContext: Erro no logout:', error); throw error; } finally { setAuthLoading(false); } };
-  const refreshAuth = async (): Promise<void> => { /* ... (sem mudanças) ... */ try { const { data: { session : refreshedSession }, error } = await supabase.auth.getSession(); if (error) throw error; setSession(refreshedSession); setUser(refreshedSession?.user ?? null); console.log('✅ AuthContext: Auth refreshed'); } catch (error) { console.error('❌ AuthContext: Erro ao refresh auth:', error); throw error; } };
+  const login = async (email: string, password: string): Promise<void> => { setAuthLoading(true); try { const { error } = await supabase.auth.signInWithPassword({ email, password }); if (error) throw error; console.log('✅ AuthContext: Login realizado com sucesso'); } catch (error) { console.error('❌ AuthContext: Erro no login:', error); throw error; } finally { setAuthLoading(false); } };
+  const logout = async (): Promise<void> => { setAuthLoading(true); try { const { error } = await supabase.auth.signOut(); if (error) throw error; console.log('✅ AuthContext: Logout realizado com sucesso'); setUser(null); setSession(null); lastSessionTokenRef.current = null; fluxData.clearFluxCache(); /* Limpar cache do useFluxData no logout */ } catch (error) { console.error('❌ AuthContext: Erro no logout:', error); throw error; } finally { setAuthLoading(false); } };
+  const refreshAuth = async (): Promise<void> => { try { const { data: { session : refreshedSession }, error } = await supabase.auth.getSession(); if (error) throw error; setSession(refreshedSession); setUser(refreshedSession?.user ?? null); console.log('✅ AuthContext: Auth refreshed'); } catch (error) { console.error('❌ AuthContext: Erro ao refresh auth:', error); throw error; } };
 
   const canPerformAction = useCallback((action: string): boolean => {
     if (!user) return false;
-    // userPlan é agora uma variável derivada do useFluxData.userProfile
     const planPermissions = {
-      free: ['basic_actions'],
-      trial: ['basic_actions', 'trial_actions'],
-      basic: ['basic_actions', 'paid_actions'],
-      pro: ['basic_actions', 'paid_actions', 'pro_actions'],
-      enterprise: ['basic_actions', 'paid_actions', 'pro_actions', 'enterprise_actions']
+      free: ['basic_actions', 'view_analyzer_free_report'],
+      trial: ['basic_actions', 'trial_actions', 'use_analyzer_full', 'use_optimizer_limited'],
+      basic: ['basic_actions', 'paid_actions', 'use_analyzer_full', 'use_optimizer_basic'],
+      pro: ['basic_actions', 'paid_actions', 'pro_actions', 'use_analyzer_full', 'use_optimizer_full', 'view_advanced_reports'],
+      enterprise: ['basic_actions', 'paid_actions', 'pro_actions', 'enterprise_actions', 'all_features']
     };
-    const currentPlan = userPlan || 'free'; // Fallback se userPlan ainda não estiver carregado
-    const userPermissions = planPermissions[currentPlan as keyof typeof planPermissions] || ['basic_actions'];
+    const currentPlanForPermissions = userPlan || 'free';
+    const userPermissions = planPermissions[currentPlanForPermissions as keyof typeof planPermissions] || ['basic_actions'];
     return userPermissions.includes(action);
   }, [user, userPlan]);
+
+  // O loading combinado considera o carregamento da sessão E o carregamento do perfil do usuário se o usuário estiver logado
+  const combinedLoading = authLoading || (!!user && fluxDataLoading('coreUser'));
+  // Pronto se a autenticação foi verificada E (não há usuário OU (há usuário E o perfil do fluxData foi carregado))
+  const combinedIsReady = isAuthReady && (!user || (!!user && !!fluxUserProfile));
+
 
   const value = useMemo(() => ({
     user,
     session,
-    loading: authLoading || (fluxData.loading && !fluxData.userProfile), // Combina loading do auth e do perfil inicial do fluxData
-    isReady: isAuthReady && (!!fluxData.userProfile || !user), // Pronto se auth está pronto E (perfil carregado OU não há usuário)
+    loading: combinedLoading,
+    isReady: combinedIsReady,
     isAuthenticated: !!user,
-    userPlan, // Derivado
+    userProfile: fluxUserProfile, // Expor o perfil completo
+    userPlan,
     canPerformAction,
     login,
     logout,
     refreshAuth,
-  }), [user, session, authLoading, isAuthReady, userPlan, canPerformAction, fluxData.loading, fluxData.userProfile]);
+  }), [user, session, combinedLoading, combinedIsReady, fluxUserProfile, userPlan, canPerformAction, login, logout, refreshAuth]); // Adicionado login, logout, refreshAuth
 
   return (
     <AuthContext.Provider value={value}>

@@ -1,20 +1,20 @@
-// src/hooks/useFluxData.ts - ENTERPRISE GRADE DATA MANAGEMENT CORRIGIDO
+// src/hooks/useFluxData.ts - ENTERPRISE GRADE DATA MANAGEMENT CORRIGIDO E CENTRALIZADO
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext'; // Apenas para obter 'user' para 'userId'
 import { supabase } from '../lib/supabaseClient';
 import {
   Site,
   Analysis,
   MetricsData,
-  UserSettings as UserPreferencesData,
+  UserSettings as UserPreferencesData, // Dados da tabela user_settings
   Notification,
   RateLimit,
   OptimizationTask,
-  TrialStatusData,
+  // TrialStatusData, // TrialStatusData será calculado ou virá de userProfile
   AnalyzeAdSensePayload,
   AnalyzeAdSenseResponse,
-  GenerateScriptPayload, // Esta interface pode não ser mais necessária se passarmos params via URL
+  // GenerateScriptPayload, // Não mais necessária, params via URL
   GenerateScriptResponse,
   CreateSitePayload,
   CreateSiteResponse,
@@ -22,186 +22,281 @@ import {
   InvokeFluxOptimizerEngineResponse,
   GeneratePdfReportPayload,
   GeneratePdfReportResponse,
-  UserProfileData
+  UserProfileData, // Dados da tabela clients
+  TaskActionsPayload, // Para o campo actions em OptimizationTask
+  RecentActivity // Definida abaixo
 } from '../types/interfaces';
 
-
+// Interface para o feed de atividades do Dashboard (pode ser movida para interfaces.ts se usada em mais lugares)
 export interface RecentActivity {
   id: string;
-  type: 'analysis' | 'optimization' | 'site_added';
+  type: 'analysis' | 'optimization' | 'site_added' | 'unknown';
   title: string;
   description: string;
   timestamp: string;
-  status: 'success' | 'processing' | 'failed' | 'completed' | 'pending';
+  status: 'success' | 'processing' | 'failed' | 'completed' | 'pending' | 'info';
   metadata?: any;
   site_url?: string;
+  link?: string; // Para navegação
 }
 
+// === CACHE MANAGEMENT ===
 interface CacheEntry<T> { data: T; timestamp: number; ttl: number; }
 class FluxCache {
   private cache = new Map<string, CacheEntry<any>>();
-  set<T>(key: string, data: T, ttl: number = 5 * 60 * 1000): void { this.cache.set(key, { data, timestamp: Date.now(), ttl }); }
+  set<T>(key: string, data: T, ttl: number = 3 * 60 * 1000): void { this.cache.set(key, { data, timestamp: Date.now(), ttl }); } // TTL padrão de 3 min
   get<T>(key: string): T | null { const entry = this.cache.get(key); if (!entry || (Date.now() - entry.timestamp > entry.ttl)) { if (entry) this.cache.delete(key); return null; } return entry.data; }
-  invalidate(pattern?: string): void { if (!pattern) { this.cache.clear(); return; } const keys = Array.from(this.cache.keys()); keys.forEach(key => { if (key.includes(pattern)) this.cache.delete(key); }); }
+  invalidate(pattern?: string | RegExp): void {
+    if (!pattern) { this.cache.clear(); return; }
+    const keys = Array.from(this.cache.keys());
+    const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
+    keys.forEach(key => { if (regex.test(key)) this.cache.delete(key); });
+  }
   getStats = () => ({ size: this.cache.size, keys: Array.from(this.cache.keys()) });
 }
 const fluxCache = new FluxCache();
 
-const getValidSession = async () => { try { const { data: { user }, error: userError } = await supabase.auth.getUser(); if (userError) { console.error('❌ Erro ao verificar usuário:', userError); throw new Error(`User error: ${userError.message}`); } if (!user) { console.warn('⚠️ Usuário não autenticado'); throw new Error('No authenticated user'); } const { data: { session }, error: sessionError } = await supabase.auth.getSession(); if (sessionError) { console.error('❌ Erro na sessão:', sessionError); throw new Error(`Session error: ${sessionError.message}`); } if (!session) { console.warn('⚠️ Nenhuma sessão ativa'); throw new Error('No active session'); } console.log('✅ Usuário e sessão válidos:', user.email); return { user, session }; } catch (error) { console.error('❌ getValidSession failed:', error); throw error; } };
-const extractSupabaseData = <T>(result: unknown, defaultValue: T): T => { if (result && typeof result === 'object' && 'data' in result) { const typedResult = result as { data?: T; error?: any }; if (typedResult.error) { console.warn('⚠️ Supabase query error:', typedResult.error); return defaultValue; } return typedResult.data ?? defaultValue; } return defaultValue; };
-const extractSettledData = <T>(result: PromiseSettledResult<any>, defaultValue: T): T => {  if (result.status === 'fulfilled') { return extractSupabaseData(result.value, defaultValue); } else { console.warn('⚠️ Promise rejected:', result.reason); return defaultValue; } };
+// === UTILITY FUNCTIONS ===
+const getValidSessionOrThrow = async () => {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) throw new Error(`Usuário não autenticado: ${userError?.message || 'Sessão inválida'}`);
 
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session) throw new Error(`Sessão Supabase inválida: ${sessionError?.message || 'Sessão não encontrada'}`);
+
+  console.log('✅ [useFluxData] Sessão válida para:', user.email);
+  return { user, session };
+};
+
+const extractSupabaseData = <T>(result: { data?: T | T[] | null; error?: any } | null, defaultValue: T[] | T | null, isSingle = false): T[] | T | null => {
+  if (!result) return defaultValue;
+  if (result.error) {
+    console.warn(`⚠️ [useFluxData] Supabase query error: ${result.error.message}`, result.error);
+    return defaultValue;
+  }
+  if (isSingle) return result.data as T ?? defaultValue;
+  return (result.data as T[]) ?? defaultValue;
+};
+
+const extractSettledSupabaseData = <T>(result: PromiseSettledResult<{data?: T | T[] | null; error?: any}>, defaultValue: T[] | T | null, isSingle = false): T[] | T | null => {
+  if (result.status === 'fulfilled') {
+    return extractSupabaseData(result.value, defaultValue, isSingle);
+  } else {
+    console.warn('⚠️ [useFluxData] Promise rejected:', result.reason);
+    return defaultValue;
+  }
+};
+
+
+// === STATE MANAGEMENT ===
 interface FluxState {
-  metrics: MetricsData | null;
+  metrics: MetricsData | null; // Última métrica geral ou de site específico
   analyses: Analysis[];
   sites: Site[];
-  userProfile: UserProfileData | null;
-  currentUserPreferences: UserPreferencesData | null;
+  userProfile: UserProfileData | null; // Dados da tabela 'clients'
+  currentUserPreferences: UserPreferencesData | null; // Dados da tabela 'user_settings'
   notifications: Notification[];
-  rateLimits: RateLimit[];
+  rateLimits: RateLimit[]; // Array de RateLimit
   optimizationTasks: OptimizationTask[];
   recentActivityFeed: RecentActivity[];
-  loading: boolean;
-  error: string | null;
+  loading: Set<string>; // Set de chaves de loading para granularidade
+  error: string | null; // Erro global do hook
 }
 
-interface FluxDataReturn extends FluxState {
-  refreshData: () => Promise<void>;
+// === HOOK INTERFACE ===
+interface FluxDataReturn extends Omit<FluxState, 'loading'> {
+  isLoading: (key?: string) => boolean; // Função para verificar loading específico ou geral
+  refreshData: (dataType?: keyof FluxState | 'all') => Promise<void>;
   generateScript: (siteId: string) => Promise<GenerateScriptResponse>;
-  addSite: (siteData: { url: string; name?: string; monthly_pageviews: number; current_rpm: number }) => Promise<CreateSiteResponse | { success: false; error: any }>;
-  updateSite: (siteId: string, updates: Partial<Site>) => Promise<void>;
-  clearCache: () => void;
-  getCacheStats: () => { size: number; keys: string[] };
-  invokeAnalyzeAdSense: (payload: AnalyzeAdSensePayload) => Promise<AnalyzeAdSenseResponse>;
-  invokeFluxOptimizerEngine: (payload: InvokeFluxOptimizerEnginePayload) => Promise<InvokeFluxOptimizerEngineResponse>;
-  invokeGeneratePdfReport: (payload: GeneratePdfReportPayload) => Promise<GeneratePdfReportResponse>;
-  updateUserProfile: (data: Partial<UserProfileData>) => Promise<{ success: boolean; error?: any }>;
-  updateUserPreferences: (data: Partial<UserPreferencesData>) => Promise<{ success: boolean; error?: any }>;
+  addSite: (siteData: Omit<CreateSitePayload, 'client_id' | 'timestamp'>) => Promise<CreateSiteResponse | { success: false; error: any; data?: null }>;
+  updateSite: (siteId: string, updates: Partial<Site>) => Promise<{success: boolean, error?: any, data?: Site | null}>;
+  clearFluxCache: (pattern?: string | RegExp) => void;
+  getFluxCacheStats: () => { size: number; keys: string[] };
+  invokeAnalyzeAdSense: (payload: Omit<AnalyzeAdSensePayload, 'client_id' | 'timestamp'>) => Promise<AnalyzeAdSenseResponse>;
+  invokeFluxOptimizerEngine: (payload: Omit<InvokeFluxOptimizerEnginePayload, 'user_id' | 'timestamp'>) => Promise<InvokeFluxOptimizerEngineResponse>;
+  invokeGeneratePdfReport: (payload: Omit<GeneratePdfReportPayload, 'userId' | 'generatedAt'>) => Promise<GeneratePdfReportResponse>;
+  updateUserProfile: (data: Partial<Omit<UserProfileData, 'id' | 'email' | 'created_at' | 'updated_at'>>) => Promise<{ success: boolean; error?: any }>;
+  updateUserPreferences: (data: Partial<Omit<UserPreferencesData, 'client_id' | 'id' | 'created_at' | 'updated_at'>>) => Promise<{ success: boolean; error?: any }>;
   fetchRecentActivityFeed: () => Promise<void>;
   markNotificationRead: (notificationId: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
 }
 
 export function useFluxData(): FluxDataReturn {
-  const { user } = useAuth();
-  const [state, setState] = useState<FluxState>({ /* ... estado inicial ... */ metrics: null, analyses: [], sites: [], userProfile: null, currentUserPreferences: null, notifications: [], rateLimits: [], optimizationTasks: [], recentActivityFeed: [], loading: false, error: null });
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const refreshInProgressRef = useRef(false);
-  const subscriptionsRef = useRef<any[]>([]);
+  const { user } = useAuth(); // Apenas para obter userId e reagir a mudanças de usuário
   const userId = useMemo(() => user?.id, [user]);
 
-  const updateState = useCallback((updates: Partial<FluxState>) => { setState(prev => ({ ...prev, ...updates })); }, []);
-  const getCacheKey = useCallback((type: string, params?: any) => { const baseKey = `${userId}_${type}`; return params ? `${baseKey}_${JSON.stringify(params)}` : baseKey; }, [userId]);
+  const [state, setState] = useState<FluxState>({
+    metrics: null, analyses: [], sites: [], userProfile: null, currentUserPreferences: null,
+    notifications: [], rateLimits: [], optimizationTasks: [], recentActivityFeed: [],
+    loading: new Set<string>(), error: null
+  });
 
-  const fetchUserData = useCallback(async (signal?: AbortSignal) => { /* ... (implementação como antes) ... */   if (!userId) return; try { const { user: authUser } = await getValidSession(); const cacheKey = getCacheKey('user_data_full'); const cached = fluxCache.get<Partial<FluxState>>(cacheKey); if (cached) { updateState(cached); return; } console.log('🔄 Fetching full user data for user:', authUser.email); const [ profileResult, preferencesResult, sitesResult, analysesResult, notificationsResult, rateLimitsResult ] = await Promise.allSettled([ supabase.from('clients').select('*').eq('id', authUser.id).maybeSingle(), supabase.from('user_settings').select('*').eq('client_id', authUser.id).maybeSingle(), supabase.from('sites').select('*').eq('client_id', authUser.id).order('created_at', { ascending: false }), supabase.from('adsense_analyses').select('id, created_at, optimization_score, total_revenue, status, site_id, client_id, site_url').eq('client_id', authUser.id).order('created_at', { ascending: false }).limit(50), supabase.from('notifications').select('*').eq('user_id', authUser.id).order('created_at', { ascending: false }).limit(10), supabase.from('rate_limits').select('*').eq('user_id', authUser.id), ]); const userProfile = extractSettledData(profileResult, null) as UserProfileData | null; const currentUserPreferences = extractSettledData(preferencesResult, null) as UserPreferencesData | null; const sites = extractSettledData(sitesResult, []); const analyses = extractSettledData(analysesResult, []).map(a => ({...a, site_url: sites.find(s => s.id === a.site_id)?.url || a.site_url || ''})); const notifications = extractSettledData(notificationsResult, []); const rateLimits = extractSettledData(rateLimitsResult, []); let optimizationTasks: OptimizationTask[] = []; if (sites.length > 0) { try { const siteIds = sites.map((s: Site) => s.id); const tasksQuery = await supabase .from('optimization_tasks') .select('id, created_at, status, site_id, completed_at, error_message, results') .in('site_id', siteIds) .order('created_at', { ascending: false }) .limit(10); optimizationTasks = extractSupabaseData(tasksQuery, []); } catch (tasksError) { console.warn('⚠️ Could not fetch optimization tasks:', tasksError); } } let metrics: MetricsData | null = null; if (sites.length > 0) { try { const metricsQuery = await supabase .from('metrics') .select('*') .in('site_id', sites.map((s: Site) => s.id)) .order('timestamp', { ascending: false }) .limit(1); const metricsData = extractSupabaseData(metricsQuery, []); metrics = metricsData[0] || null; } catch (metricsError) { console.warn('⚠️ Could not fetch metrics:', metricsError); } } const newState: Partial<FluxState> = { sites, analyses, userProfile, currentUserPreferences, notifications, rateLimits, optimizationTasks, metrics, error: null }; updateState(newState); fluxCache.set(cacheKey, newState, 3 * 60 * 1000); console.log('✅ Full user data fetched successfully'); } catch (error: any) { if (error.name === 'AbortError') { console.log('🔄 Data fetch aborted'); return; } console.error('❌ Error fetching user data:', error); updateState({ error: error.message });} }, [userId, updateState, getCacheKey, supabase]);
-  const fetchRecentActivityFeedInternal = useCallback(async (): Promise<RecentActivity[]> => { /* ... (implementação como antes) ... */   if (!userId) return []; try { const { data: analysesData } = await supabase .from('adsense_analyses') .select('id, created_at, status, site_id, site_url, sites ( url )') .eq('client_id', userId) .order('created_at', { ascending: false }) .limit(5); const siteIdsFromState = state.sites.map(s => s.id); if (siteIdsFromState.length === 0) { console.log("No sites in state for recent tasks, skipping task fetch for feed."); return []; // Ou buscar todos os sites aqui se necessário } const { data: tasksData } = await supabase .from('optimization_tasks') .select('id, created_at, status, site_id, sites ( url )') .in('site_id', siteIdsFromState) .order('created_at', { ascending: false }) .limit(3); const activities: RecentActivity[] = []; analysesData?.forEach((a: any) => activities.push({ id: a.id, type: 'analysis', title: `Análise ${a.sites?.url || a.site_url || a.site_id}`, description: `Status: ${a.status}`, timestamp: a.created_at, status: a.status as RecentActivity['status'], site_url: a.sites?.url || a.site_url })); tasksData?.forEach((t: any) => activities.push({ id: t.id, type: 'optimization', title: `Otimização ${t.sites?.url || t.site_id}`, description: `Status: ${t.status}`, timestamp: t.created_at, status: t.status as RecentActivity['status'], site_url: t.sites?.url })); activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()); return activities.slice(0, 8); } catch (error) { console.error('Error fetching recent activity feed:', error); return []; } }, [userId, state.sites, supabase]);
-  const fetchRecentActivityFeed = useCallback(async () => { const feed = await fetchRecentActivityFeedInternal(); updateState({ recentActivityFeed: feed }); }, [fetchRecentActivityFeedInternal, updateState]);
-  const refreshData = useCallback(async (): Promise<void> => { /* ... (lógica de refreshData original, chamando fetchUserData) ... */ if (!userId) return; if (refreshInProgressRef.current) { console.log('🔄 RefreshData: Already in progress, skipping...'); return; } refreshInProgressRef.current = true; updateState({ loading: true, error: null }); if (abortControllerRef.current) { abortControllerRef.current.abort(); } abortControllerRef.current = new AbortController(); try { await fetchUserData(abortControllerRef.current?.signal); } catch (error: any) { console.error('❌ RefreshData failed:', error); updateState({ error: error.message }); } finally { updateState({ loading: false }); refreshInProgressRef.current = false; } }, [userId, fetchUserData, updateState]);
-  const refreshDataAndActivity = useCallback(async () => { await refreshData(); await fetchRecentActivityFeed(); }, [refreshData, fetchRecentActivityFeed]);
-  const setupSubscriptions = useCallback(async () => { /* ... (implementação como antes, mas refreshDataAndActivity) ... */ if (!userId) return; subscriptionsRef.current.forEach(sub => sub?.unsubscribe()); subscriptionsRef.current = []; try { console.log('🔄 Setting up real-time subscriptions...'); const sitesChannel = supabase .channel(`flux_sites_${userId}`) .on('postgres_changes', { event: '*', schema: 'public', table: 'sites', filter: `client_id=eq.${userId}` }, (payload) => { console.log('🌐 Real-time site update:', payload); fluxCache.invalidate('sites'); fluxCache.invalidate('user_data_full'); refreshDataAndActivity(); }) .subscribe(); const analysesChannel = supabase .channel(`flux_analyses_${userId}`) .on('postgres_changes', { event: '*', schema: 'public', table: 'adsense_analyses', filter: `client_id=eq.${userId}` }, (payload) => { console.log('📈 Real-time analysis update:', payload); fluxCache.invalidate('analyses'); fluxCache.invalidate('user_data_full'); if (payload.eventType === 'INSERT') { setState(prev => ({ ...prev, analyses: [payload.new as Analysis, ...prev.analyses] })); fetchRecentActivityFeed(); } else { refreshDataAndActivity(); } }) .subscribe(); const notificationsChannel = supabase .channel(`flux_notifications_${userId}`) .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, (payload) => { console.log('🔔 Real-time notification update:', payload); fluxCache.invalidate('notifications'); fluxCache.invalidate('user_data_full'); if (payload.eventType === 'INSERT') { setState(prev => ({ ...prev, notifications: [payload.new as Notification, ...prev.notifications] })); } else { refreshDataAndActivity(); } }) .subscribe(); const optimizationTasksChannel = supabase .channel(`flux_optimization_tasks_${userId}_v2`) .on('postgres_changes', { event: '*', schema: 'public', table: 'optimization_tasks' /* Filter by site_ids user owns might be complex here, rely on refresh */ }, async (payload) => { console.log('⚡ Real-time optimization_task update:', payload); fluxCache.invalidate('optimizationTasks'); fluxCache.invalidate('user_data_full'); await refreshDataAndActivity(); }) .subscribe(); const userSettingsChannel = supabase .channel(`flux_user_settings_${userId}`) .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'user_settings', filter: `client_id=eq.${userId}`}, (payload) => { console.log('⚙️ Real-time user_settings update:', payload); fluxCache.invalidate('user_data_full'); refreshDataAndActivity(); }).subscribe(); const clientsChannel = supabase .channel(`flux_clients_${userId}`) .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clients', filter: `id=eq.${userId}`}, (payload) => { console.log('👤 Real-time clients (userProfile) update:', payload); fluxCache.invalidate('user_data_full'); refreshDataAndActivity(); }).subscribe(); subscriptionsRef.current = [sitesChannel, analysesChannel, notificationsChannel, optimizationTasksChannel, userSettingsChannel, clientsChannel]; console.log('✅ Real-time subscriptions setup completed'); } catch (error) { console.error('❌ Error setting up subscriptions:', error); } }, [userId, refreshDataAndActivity, supabase]); // Adicionado supabase
-  useEffect(() => { if (userId) { refreshDataAndActivity(); setupSubscriptions(); } return () => { subscriptionsRef.current.forEach(sub => sub?.unsubscribe()); if (abortControllerRef.current) { abortControllerRef.current.abort(); }}; }, [userId, setupSubscriptions, refreshDataAndActivity]);
+  const setLoadingState = useCallback((key: string, isLoading: boolean) => {
+    setState(prev => {
+      const newLoading = new Set(prev.loading);
+      if (isLoading) newLoading.add(key);
+      else newLoading.delete(key);
+      return { ...prev, loading: newLoading };
+    });
+  }, []);
 
-  const invokeAnalyzeAdSenseImpl = useCallback(async (payload: AnalyzeAdSensePayload): Promise<AnalyzeAdSenseResponse> => { /* ... (implementação como antes, mas refreshDataAndActivity) ... */ if (!userId) return { success: false, message: 'User not authenticated for EF.' }; const finalPayload = { ...payload, client_id: userId }; try { const { data, error } = await supabase.functions.invoke<AnalyzeAdSenseResponse>('analyze-adsense', { body: finalPayload }); if (error) throw error; if (!data) throw new Error('No data from analyze-adsense'); await refreshDataAndActivity(); return data; } catch (e:any) { console.error('invokeAnalyzeAdSense error:', e); return { success:false, message: e.message || "Unknown error analyzing AdSense" };} }, [userId, supabase, refreshDataAndActivity]);
-  const invokeFluxOptimizerEngineImpl = useCallback(async (payload: InvokeFluxOptimizerEnginePayload): Promise<InvokeFluxOptimizerEngineResponse> => { /* ... (implementação como antes, mas refreshDataAndActivity) ... */ if (!userId) return { success: false, message: 'User not authenticated for EF.' }; const finalPayload = { ...payload, user_id: userId }; try { const { data, error } = await supabase.functions.invoke<InvokeFluxOptimizerEngineResponse>('flux-optimizer-engine', { body: finalPayload }); if (error) throw error; if (!data) throw new Error('No data from flux-optimizer-engine'); await refreshDataAndActivity(); return data; } catch (e:any) { console.error('invokeFluxOptimizerEngine error:', e); return { success:false, message: e.message || "Unknown error from optimizer engine" };} }, [userId, supabase, refreshDataAndActivity]);
-  const invokeGeneratePdfReportImpl = useCallback(async (payload: GeneratePdfReportPayload): Promise<GeneratePdfReportResponse> => { /* ... (implementação como antes) ... */ if (!userId) return { success: false, message: 'User not authenticated for EF.' }; const finalPayload = { ...payload, userId: userId }; try { const { data, error } = await supabase.functions.invoke<GeneratePdfReportResponse>('generate-pdf-report', { body: finalPayload }); if (error) throw error; if (!data) throw new Error('No data from generate-pdf-report'); return data; } catch (e:any) { console.error('invokeGeneratePdfReport error:', e); return { success:false, message: e.message || "Unknown error generating PDF" };} }, [userId, supabase]);
-  const updateUserProfileImpl = useCallback(async (profileData: Partial<UserProfileData>): Promise<{ success: boolean; error?: any }> => { /* ... (implementação como antes) ... */ if (!userId) return { success: false, error: new Error('User not authenticated') }; try { const { error } = await supabase.from('clients').update(profileData).eq('id', userId); if (error) throw error; await refreshDataAndActivity(); return { success: true }; } catch (error: any) { return { success: false, error }; } }, [userId, supabase, refreshDataAndActivity]);
-  const updateUserPreferencesImpl = useCallback(async (preferencesData: Partial<UserPreferencesData>): Promise<{ success: boolean; error?: any }> => { /* ... (implementação como antes) ... */ if (!userId) return { success: false, error: new Error('User not authenticated') }; try { const upsertData = { ...preferencesData, client_id: userId }; const { error } = await supabase.from('user_settings').upsert(upsertData, { onConflict: 'client_id' }); if (error) throw error; await refreshDataAndActivity(); return { success: true }; } catch (error: any) { return { success: false, error }; } }, [userId, supabase, refreshDataAndActivity]);
-  const markNotificationReadImpl = useCallback(async (notificationId: string): Promise<void> => { /* ... (implementação como antes, mas refreshDataAndActivity) ... */ if (!userId) return; try { await supabase.from('notifications').update({ read: true }).eq('id', notificationId).eq('user_id', userId); await refreshDataAndActivity(); } catch (error) { console.error("Error marking notification read:", error); } }, [userId, supabase, refreshDataAndActivity]);
-  const markAllNotificationsReadImpl = useCallback(async (): Promise<void> => { /* ... (implementação como antes, mas refreshDataAndActivity) ... */ if (!userId) return; try { await supabase.from('notifications').update({ read: true }).eq('user_id', userId).eq('read', false); await refreshDataAndActivity(); } catch (error) { console.error("Error marking all notifications read:", error); } }, [userId, supabase, refreshDataAndActivity]);
+  const isLoading = useCallback((key?: string) => {
+    if (key) return state.loading.has(key);
+    return state.loading.size > 0;
+  }, [state.loading]);
 
-  const generateScriptHandler = useCallback(async (siteId: string): Promise<GenerateScriptResponse> => {
-    if (!userId) return { success: false, message: 'User not authenticated' };
 
-    const site = state.sites.find(s => s.id === siteId);
-    if (!site || !site.optimization_token) {
-      return { success: false, message: 'Site não encontrado ou token de otimização ausente.' };
-    }
+  const updateState = useCallback((updates: Partial<FluxState>) => {
+    setState(prev => ({ ...prev, ...updates, error: null })); // Limpa erro em qualquer atualização de sucesso
+  }, []);
+
+  const getCacheKey = useCallback((type: string, params?: any) => {
+    const baseKey = `${userId}_${type}`;
+    return params ? `${baseKey}_${JSON.stringify(params)}` : baseKey;
+  }, [userId]);
+
+  // --- FUNÇÕES DE BUSCA DE DADOS ---
+  const fetchCoreUserData = useCallback(async (currentUserId: string, signal?: AbortSignal) => {
+    setLoadingState('coreUser', true);
+    try {
+      const cacheKey = getCacheKey('core_user_data');
+      const cached = fluxCache.get<Pick<FluxState, 'userProfile' | 'currentUserPreferences'>>(cacheKey);
+      if (cached) { updateState(cached); setLoadingState('coreUser', false); return; }
+
+      const [profileResult, preferencesResult] = await Promise.allSettled([
+        supabase.from('clients').select('*').eq('id', currentUserId).maybeSingle(),
+        supabase.from('user_settings').select('*').eq('client_id', currentUserId).maybeSingle(),
+      ]);
+
+      const userProfile = extractSettledSupabaseData(profileResult, null, true) as UserProfileData | null;
+      const currentUserPreferences = extractSettledSupabaseData(preferencesResult, null, true) as UserPreferencesData | null;
+
+      const partialState: Pick<FluxState, 'userProfile' | 'currentUserPreferences'> = { userProfile, currentUserPreferences };
+      updateState(partialState);
+      fluxCache.set(cacheKey, partialState);
+    } catch (error: any) { setState(prev => ({...prev, error: error.message})); }
+    finally { setLoadingState('coreUser', false); }
+  }, [getCacheKey, updateState, setLoadingState]);
+
+  const fetchSitesAndAnalyses = useCallback(async (currentUserId: string, signal?: AbortSignal) => {
+    setLoadingState('sitesAnalyses', true);
+    try {
+      const cacheKey = getCacheKey('sites_analyses_data');
+      const cached = fluxCache.get<Pick<FluxState, 'sites' | 'analyses' | 'optimizationTasks' | 'metrics'>>(cacheKey);
+      if (cached) { updateState(cached); setLoadingState('sitesAnalyses', false); return; }
+
+      const [sitesResult, analysesResult, notificationsResult, rateLimitsResult] = await Promise.allSettled([
+        supabase.from('sites').select('*').eq('client_id', currentUserId).order('created_at', { ascending: false }),
+        supabase.from('adsense_analyses').select('*, sites(url)').eq('client_id', currentUserId).order('created_at', { ascending: false }).limit(50),
+        supabase.from('notifications').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false }).limit(20),
+        supabase.from('rate_limits').select('*').eq('user_id', currentUserId),
+      ]);
+      const sites = extractSupabaseData(sitesResult.status === 'fulfilled' ? sitesResult.value : null, []) as Site[];
+      const analyses = extractSupabaseData(analysesResult.status === 'fulfilled' ? analysesResult.value : null, []) as Analysis[];
+      const notifications = extractSupabaseData(notificationsResult.status === 'fulfilled' ? notificationsResult.value : null, []) as Notification[];
+      const rateLimits = extractSupabaseData(rateLimitsResult.status === 'fulfilled' ? rateLimitsResult.value : null, []) as RateLimit[];
+
+      let optimizationTasks: OptimizationTask[] = [];
+      if (sites.length > 0) { /* ... (lógica de buscar optimization_tasks) ... */ try { const siteIds = sites.map(s => s.id); const tasksQuery = await supabase .from('optimization_tasks') .select('id, created_at, status, site_id, results').in('site_id', siteIds) .order('created_at', { ascending: false }).limit(20); optimizationTasks = extractSupabaseData(tasksQuery, []); } catch (e){console.warn(e)} }
+      let metrics: MetricsData | null = null;
+      if (sites.length > 0) { /* ... (lógica de buscar metrics) ... */ try { const metricsQuery = await supabase .from('metrics') .select('*') .in('site_id', sites.map(s=>s.id)) .order('timestamp', { ascending: false }).limit(1); const metricsData = extractSupabaseData(metricsQuery, []); metrics = metricsData[0] || null; } catch(e){console.warn(e)} }
+
+      const partialState: Pick<FluxState, 'sites' | 'analyses' | 'notifications' | 'rateLimits' | 'optimizationTasks' | 'metrics'> =
+        { sites, analyses, notifications, rateLimits, optimizationTasks, metrics };
+      updateState(partialState);
+      fluxCache.set(cacheKey, partialState);
+    } catch (error: any) { setState(prev => ({...prev, error: error.message})); }
+    finally { setLoadingState('sitesAnalyses', false); }
+  }, [getCacheKey, updateState, setLoadingState]);
+
+  const fetchRecentActivityFeedInternal = useCallback(async (currentUserId: string, currentSites: Site[]): Promise<RecentActivity[]> => { /* ... (lógica como antes, mas recebe userId e sites) ... */ if (!currentUserId) return []; try { const { data: analysesData } = await supabase .from('adsense_analyses') .select('id, created_at, status, site_id, site_url, sites ( url )') .eq('client_id', currentUserId) .order('created_at', { ascending: false }) .limit(5); let tasksData: any[] = []; if (currentSites.length > 0) { const siteIdsFromState = currentSites.map(s => s.id); const {data} = await supabase .from('optimization_tasks') .select('id, created_at, status, site_id, sites ( url )') .in('site_id', siteIdsFromState) .order('created_at', { ascending: false }) .limit(3); tasksData = data || []; } const activities: RecentActivity[] = []; analysesData?.forEach((a: any) => activities.push({ id: a.id, type: 'analysis', title: `Análise ${a.sites?.url || a.site_url || a.site_id}`, description: `Status: ${a.status}`, timestamp: a.created_at, status: a.status as RecentActivity['status'], site_url: a.sites?.url || a.site_url, link: `/analyzer?analysis_id=${a.id}` })); tasksData?.forEach((t: any) => activities.push({ id: t.id, type: 'optimization', title: `Otimização ${t.sites?.url || t.site_id}`, description: `Status: ${t.status}`, timestamp: t.created_at, status: t.status as RecentActivity['status'], site_url: t.sites?.url, link: `/optimizer?task_id=${t.id}` })); activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()); return activities.slice(0, 8); } catch (error) { console.error('Error fetching recent activity feed:', error); return []; } }, [supabase]);
+  const fetchRecentActivityFeed = useCallback(async () => { if(!userId) return; setLoadingState('recentActivity', true); try { const feed = await fetchRecentActivityFeedInternal(userId, state.sites); updateState({ recentActivityFeed: feed }); } catch(e:any){ setState(prev => ({...prev, error: e.message}));} finally { setLoadingState('recentActivity', false); } }, [userId, state.sites, fetchRecentActivityFeedInternal, updateState, setLoadingState]);
+
+  const refreshData = useCallback(async (dataType: keyof FluxState | 'all' = 'all') => {
+    if (!userId) { console.warn("[useFluxData] Tentativa de refresh sem userId."); return; }
+    console.log(`[useFluxData] Refreshing data for: ${dataType}`);
+
+    if (refreshInProgressRef.current && dataType === 'all') { console.log('🔄 RefreshData (all): Already in progress...'); return; }
+    if (dataType === 'all') refreshInProgressRef.current = true;
+
+    setLoadingState(dataType === 'all' ? 'global' : dataType, true);
+
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
 
     try {
-      // A EF flux-optimizer-script espera GET e retorna texto.
-      // supabase.functions.invoke é para POST e espera JSON.
-      // Precisamos fazer uma chamada fetch() manual para esta EF.
-      const functionUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/flux-optimizer-script?site=${siteId}&token=${site.optimization_token}`;
-
-      // Obter o token de acesso do usuário atual para autenticar a chamada à Edge Function,
-      // mesmo que a EF em si use o token do site para autorização.
-      // Isso é uma camada extra, e pode ser opcional dependendo de como a EF é protegida.
-      // Se a EF for pública (protegida apenas pelo token do site), o header Authorization não é estritamente necessário.
-      const sessionData = await supabase.auth.getSession();
-      const accessToken = sessionData.data.session?.access_token;
-
-      const response = await fetch(functionUrl, {
-        method: 'GET',
-        headers: {
-          'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-          ...(accessToken && { 'Authorization': `Bearer ${accessToken}` }),
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error fetching script from flux-optimizer-script EF:', response.status, errorText);
-        throw new Error(`Falha ao obter script: ${response.status} ${errorText || response.statusText}`);
+      if (dataType === 'all' || dataType === 'userProfile' || dataType === 'currentUserPreferences') {
+        await fetchCoreUserData(userId, signal);
       }
-
-      const scriptContent = await response.text();
-
-      // Atualizar o cache se desejar, embora scripts possam mudar e o cache da EF já exista.
-      // fluxCache.set(getCacheKey('script', siteId), { script: scriptContent, success: true }, 60 * 60 * 1000);
-
-      console.log('✅ Script de otimização obtido com sucesso para o site:', siteId);
-      return { script: scriptContent, success: true };
-
+      if (dataType === 'all' || dataType === 'sites' || dataType === 'analyses' || dataType === 'optimizationTasks' || dataType === 'metrics' || dataType === 'notifications' || dataType === 'rateLimits') {
+        await fetchSitesAndAnalyses(userId, signal);
+      }
+      if (dataType === 'all' || dataType === 'recentActivityFeed') {
+        await fetchRecentActivityFeed(); // Usa o userId do hook e state.sites
+      }
+      // Adicionar mais blocos para outros tipos de dados se necessário
     } catch (error: any) {
-      console.error('❌ Erro ao gerar script via flux-optimizer-script:', error);
-      return { success: false, message: error.message || 'Erro ao gerar script de otimização' };
+      if (error.name !== 'AbortError') {
+        console.error(`❌ RefreshData failed for ${dataType}:`, error);
+        setState(prev => ({ ...prev, error: error.message }));
+      }
+    } finally {
+      setLoadingState(dataType === 'all' ? 'global' : dataType, false);
+      if (dataType === 'all') refreshInProgressRef.current = false;
     }
-  }, [userId, state.sites, supabase, getCacheKey]); // Adicionado supabase e getCacheKey
+  }, [userId, fetchCoreUserData, fetchSitesAndAnalyses, fetchRecentActivityFeed, setLoadingState]);
 
-  const addSiteHandler = useCallback(async (
-    siteData: { url: string; name?: string; monthly_pageviews: number; current_rpm: number }
-  ): Promise<CreateSiteResponse | { success: false; error: any }> => {
-    if (!userId) {
-      console.error("❌ addSite: Usuário não autenticado.");
-      return { success: false, error: { message: "Usuário não autenticado" } };
+  // --- EFEITOS ---
+  useEffect(() => { if (userId) { console.log('👤 [useFluxData] User detected, initial data fetch...'); refreshData('all'); } else { updateState({ userProfile: null, currentUserPreferences: null, sites: [], analyses:[], notifications:[], recentActivityFeed:[], optimizationTasks:[], metrics:null, rateLimits:[] }); fluxCache.invalidate(); } }, [userId, refreshData]); // refreshData aqui é a versão externa
+  useEffect(() => { if (userId) { setupSubscriptions(); } return () => { subscriptionsRef.current.forEach(sub => sub?.unsubscribe()); subscriptionsRef.current = []; }; }, [userId, setupSubscriptions]); // setupSubscriptions será definido abaixo
+
+  // --- FUNÇÕES DE MODIFICAÇÃO DE DADOS E CHAMADAS DE EF ---
+  const invokeAnalyzeAdSenseImpl = useCallback(async (payloadNoUser: Omit<AnalyzeAdSensePayload, 'client_id' | 'timestamp'>): Promise<AnalyzeAdSenseResponse> => { /* ... */ const {user} = await getValidSessionOrThrow(); const payload = {...payloadNoUser, client_id: user.id, timestamp: new Date().toISOString()}; setLoadingState('analyzeAdSense', true); try {const {data, error} = await supabase.functions.invoke<AnalyzeAdSenseResponse>('analyze-adsense', {body:payload}); if(error) throw error; if(!data) throw new Error('No data from analyze-adsense'); if(data.success) await refreshData('analyses'); return data;} catch(e:any){console.error(e); return {success:false, message:e.message};} finally {setLoadingState('analyzeAdSense', false);}}, [supabase, refreshData, setLoadingState]);
+  const invokeFluxOptimizerEngineImpl = useCallback(async (payloadNoUser: Omit<InvokeFluxOptimizerEnginePayload, 'user_id' | 'timestamp'>): Promise<InvokeFluxOptimizerEngineResponse> => { /* ... */ const {user} = await getValidSessionOrThrow(); const payload = {...payloadNoUser, user_id: user.id, timestamp: new Date().toISOString()}; setLoadingState('optimizerEngine', true); try {const {data, error} = await supabase.functions.invoke<InvokeFluxOptimizerEngineResponse>('flux-optimizer-engine', {body:payload}); if(error) throw error; if(!data) throw new Error('No data from flux-optimizer-engine'); if(data.success) await refreshData('optimizationTasks'); return data;} catch(e:any){console.error(e); return {success:false, message:e.message};} finally {setLoadingState('optimizerEngine', false);}}, [supabase, refreshData, setLoadingState]);
+  const invokeGeneratePdfReportImpl = useCallback(async (payloadNoUser: Omit<GeneratePdfReportPayload, 'userId' | 'generatedAt'>): Promise<GeneratePdfReportResponse> => { /* ... */ const {user} = await getValidSessionOrThrow(); const payload = {...payloadNoUser, userId: user.id, generatedAt: new Date().toISOString()}; setLoadingState('pdfReport', true); try {const {data, error} = await supabase.functions.invoke<GeneratePdfReportResponse>('generate-pdf-report', {body:payload}); if(error) throw error; if(!data) throw new Error('No data from generate-pdf-report'); return data;} catch(e:any){console.error(e); return {success:false, message:e.message};} finally {setLoadingState('pdfReport', false);}}, [supabase, setLoadingState]);
+  const updateUserProfileImpl = useCallback(async (profileData: Partial<Omit<UserProfileData, 'id' | 'email' | 'created_at' | 'updated_at'>>): Promise<{ success: boolean; error?: any }> => { /* ... */ const {user} = await getValidSessionOrThrow(); setLoadingState('updateProfile', true); try {const {error} = await supabase.from('clients').update(profileData).eq('id', user.id); if(error) throw error; await refreshData('userProfile'); return {success:true};} catch(e:any){return {success:false, error:e};} finally {setLoadingState('updateProfile', false);}}, [supabase, refreshData, setLoadingState]);
+  const updateUserPreferencesImpl = useCallback(async (preferencesData: Partial<Omit<UserPreferencesData, 'client_id' | 'id' | 'created_at' | 'updated_at'>>): Promise<{ success: boolean; error?: any }> => { /* ... */ const {user} = await getValidSessionOrThrow(); setLoadingState('updatePrefs', true); try {const upsertData = {...preferencesData, client_id: user.id}; const {error} = await supabase.from('user_settings').upsert(upsertData, {onConflict: 'client_id'}); if(error) throw error; await refreshData('currentUserPreferences'); return {success:true};} catch(e:any){return {success:false, error:e};} finally {setLoadingState('updatePrefs', false);}}, [supabase, refreshData, setLoadingState]);
+  const markNotificationReadImpl = useCallback(async (notificationId: string): Promise<void> => { /* ... */ const {user} = await getValidSessionOrThrow(); setLoadingState(`notifRead_${notificationId}`, true); try {await supabase.from('notifications').update({read:true}).eq('id',notificationId).eq('user_id',user.id); await refreshData('notifications');} catch(e){console.error(e);} finally {setLoadingState(`notifRead_${notificationId}`, false);}}, [supabase, refreshData, setLoadingState]);
+  const markAllNotificationsReadImpl = useCallback(async (): Promise<void> => { /* ... */ const {user} = await getValidSessionOrThrow(); setLoadingState('notifReadAll', true); try {await supabase.from('notifications').update({read:true}).eq('user_id',user.id).eq('read',false); await refreshData('notifications');} catch(e){console.error(e);} finally {setLoadingState('notifReadAll', false);}}, [supabase, refreshData, setLoadingState]);
+  const generateScriptHandler = useCallback(async (siteId: string): Promise<GenerateScriptResponse> => { /* ... (implementação como antes, mas com setLoadingState) ... */ const {user} = await getValidSessionOrThrow(); const site = state.sites.find(s=>s.id === siteId); if(!site || !site.optimization_token) return {success:false, message:'Site ou token não encontrado.'}; setLoadingState(`genScript_${siteId}`, true); try { const functionUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/flux-optimizer-script?site=${siteId}&token=${site.optimization_token}`; const sessionData = await supabase.auth.getSession(); const accessToken = sessionData.data.session?.access_token; const response = await fetch(functionUrl, {method:'GET', headers:{'apikey':Deno.env.get('SUPABASE_ANON_KEY') ?? '', ...(accessToken && {'Authorization':`Bearer ${accessToken}`})}}); if(!response.ok){const et=await response.text(); throw new Error(`Script EF error: ${response.status} ${et || response.statusText}`);} const scriptContent = await response.text(); return {script:scriptContent, success:true};} catch(e:any){return {success:false, message:e.message};} finally {setLoadingState(`genScript_${siteId}`, false);}}, [state.sites, supabase, setLoadingState]); // Adicionado supabase
+  const addSiteHandler = useCallback(async (siteData: Omit<CreateSitePayload, 'client_id' | 'timestamp'>): Promise<CreateSiteResponse | { success: false; error: any; data?: null }> => { /* ... (implementação como antes, mas com setLoadingState e getValidSessionOrThrow) ... */ const {user} = await getValidSessionOrThrow(); setLoadingState('addSite', true); try { const payload: CreateSitePayload = {...siteData, client_id: user.id, timestamp: new Date().toISOString()}; const {data,error} = await supabase.functions.invoke<CreateSiteResponse>('create-site',{body:payload}); if(error) throw error; if(!data) throw new Error('No data from create-site EF'); await refreshData('sites'); return data.success !== false ? data : {...data, success:false, error: {message: data.message || "Falha ao criar site"}}; } catch(e:any){return {success:false, error:e, data:null};} finally {setLoadingState('addSite', false);}}, [supabase, refreshData, setLoadingState]); // Adicionado supabase
+  const updateSiteHandler = useCallback(async (siteId: string, updates: Partial<Site>): Promise<{success: boolean, error?: any, data?: Site | null}> => { const {user} = await getValidSessionOrThrow(); setLoadingState(`updateSite_${siteId}`, true); try { const {data, error} = await supabase.from('sites').update(updates).eq('id', siteId).eq('client_id', user.id).select().single(); if(error) throw error; await refreshData('sites'); return {success:true, data}; } catch(e:any){return {success:false, error:e};} finally {setLoadingState(`updateSite_${siteId}`, false);}}, [supabase, refreshData, setLoadingState]);
+
+  const setupSubscriptionsCallback = useCallback(setupSubscriptions, [userId, refreshDataAndActivity, supabase, setState, fluxCache, fetchRecentActivityFeed]); // Adicionado supabase e outras dependências se usadas em setupSubscriptions
+
+  useEffect(() => {
+    if (userId) {
+      refreshDataAndActivity(); // Busca inicial de tudo
+      setupSubscriptionsCallback(); // Configura subscriptions
+    } else {
+      // Limpar estado se usuário deslogar
+      updateState({ userProfile: null, currentUserPreferences: null, sites: [], analyses:[], notifications:[], recentActivityFeed:[], optimizationTasks:[], metrics:null, rateLimits:[] });
+      fluxCache.invalidate();
     }
-    try {
-      await getValidSession(); // Garante sessão válida
-      const payload: CreateSitePayload = {
-        url: siteData.url,
-        name: siteData.name,
-        monthly_pageviews: siteData.monthly_pageviews,
-        current_rpm: siteData.current_rpm,
-      };
-      const { data, error } = await supabase.functions.invoke<CreateSiteResponse>('create-site', {
-        body: payload
+    // Cleanup subscriptions
+    return () => {
+      console.log('[useFluxData] Cleaning up subscriptions.');
+      subscriptionsRef.current.forEach(sub => {
+        if (sub && typeof sub.unsubscribe === 'function') {
+          supabase.removeChannel(sub); // Usar removeChannel
+        }
       });
-
-      if (error) throw error;
-      if (!data ) throw new Error("Nenhum dado retornado ao criar site.");
-
-      // Se a EF create-site não retornar um campo 'success', podemos assumir sucesso se não houver erro.
-      // Ou a interface CreateSiteResponse pode ser ajustada.
-      const responseData = data as Site; // Cast para Site, pois é o que newSite é na EF
-
-      console.log('✅ Site adicionado com sucesso pela EF:', responseData);
-      await refreshDataAndActivity();
-      return { ...responseData, success: true }; // Adicionar success wrapper
-    } catch (error: any) {
-      console.error('❌ Erro ao adicionar site:', error);
-      return { success: false, error: error };
-    }
-  }, [userId, supabase, refreshDataAndActivity]);
+      subscriptionsRef.current = [];
+    };
+  }, [userId, refreshDataAndActivity, setupSubscriptionsCallback, updateState]);
 
 
   return {
     ...state,
-    refreshData: refreshDataAndActivity,
+    isLoading,
+    refreshData: refreshData, // Expor a versão granular
     generateScript: generateScriptHandler,
     addSite: addSiteHandler,
-    updateSite: useCallback(async (siteId: string, updates: Partial<Site>) => { if (!userId) return; try {await supabase.from('sites').update(updates).eq('id', siteId).eq('client_id', userId); await refreshDataAndActivity();} catch(e){console.error(e);}}, [userId, supabase, refreshDataAndActivity]),
-    clearCache: useCallback(() => fluxCache.invalidate(), []),
-    getCacheStats: useCallback(() => fluxCache.getStats(), []),
+    updateSite: updateSiteHandler,
+    clearFluxCache: useCallback(() => fluxCache.invalidate(), []),
+    getFluxCacheStats: useCallback(() => fluxCache.getStats(), []),
     invokeAnalyzeAdSense: invokeAnalyzeAdSenseImpl,
     invokeFluxOptimizerEngine: invokeFluxOptimizerEngineImpl,
     invokeGeneratePdfReport: invokeGeneratePdfReportImpl,
@@ -213,8 +308,67 @@ export function useFluxData(): FluxDataReturn {
   };
 }
 
-export function useTrialStatus() { /* ... (sem mudanças) ... */ const { user } = useAuth(); const [data, setData] = useState<TrialStatusData | null>(null); const [loading, setLoading] = useState(false); const [error, setError] = useState<string | null>(null); const fetchStatus = useCallback(async () => { if (!user?.id) return; setLoading(true); setError(null); try { const { user: authUser } = await getValidSession(); const { data: clientData, error: clientError } = await supabase .from('clients') .select('plan, subscription_status, trial_end_date, trial_start_date') .eq('id', authUser.id) .maybeSingle(); if (clientError) throw clientError; if (clientData) { const trialEnd = clientData.trial_end_date ? new Date(clientData.trial_end_date) : null; const now = new Date(); const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0; const trialStatus: TrialStatusData = { plan: clientData.plan || 'free', trial_end: clientData.trial_end_date, days_left: daysLeft, is_trial: clientData.plan === 'trial', can_upgrade: true, features_available: ['basic_features'] }; setData(trialStatus); console.log('✅ Trial status loaded:', trialStatus); } } catch (err: any) { setError(err.message); console.error('❌ Error fetching trial status:', err); } finally { setLoading(false); } }, [user?.id]); useEffect(() => { if (user?.id) { const timer = setTimeout(fetchStatus, 300); return () => clearTimeout(timer); } }, [user?.id, fetchStatus]); return { data, loading, error }; }
-export function useMetrics(siteId: string) { /* ... (sem mudanças) ... */ const { user } = useAuth(); const [data, setData] = useState<MetricsData | null>(null); const [loading, setLoading] = useState(false); const [error, setError] = useState<string | null>(null); const fetchMetrics = useCallback(async () => { if (!user?.id || !siteId) return; setLoading(true); setError(null); try { const { data: metricsData, error: metricsError } = await supabase .from('metrics') .select('*') .eq('site_id', siteId) .order('timestamp', { ascending: false }) .limit(1); if (metricsError) throw metricsError; setData(metricsData?.[0] as MetricsData || null); console.log('✅ Metrics loaded for site:', siteId); } catch (err: any) { setError(err.message); console.error('❌ Error fetching metrics:', err); } finally { setLoading(false); } }, [user?.id, siteId]); useEffect(() => { if (user?.id && siteId) { const timer = setTimeout(fetchMetrics, 200); return () => clearTimeout(timer); } }, [user?.id, siteId, fetchMetrics]); return { data, loading, error }; }
+// Hooks especializados
+export function useTrialStatus(): { data: TrialStatusData | null; loading: boolean; error: string | null; refreshTrialStatus: () => void } {
+    const { userProfile, loading: fluxDataLoading, refreshData } = useFluxData();
+    const [trialData, setTrialData] = useState<TrialStatusData | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const calculateTrialStatus = useCallback(() => {
+        if (userProfile) {
+            setIsLoading(true);
+            const { plan, subscription_status, trial_start_date, trial_end_date, company, id } = userProfile;
+            const now = new Date();
+            const trialEnd = trial_end_date ? new Date(trial_end_date) : null;
+            let timeDiff = 0;
+            let daysRemaining = 0;
+            if (trialEnd) {
+                timeDiff = trialEnd.getTime() - now.getTime();
+                daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+            }
+            const status: TrialStatusData = {
+                plan: plan || 'free',
+                subscription_status: subscription_status || (plan === 'trial' ? 'trialing' : 'unknown'),
+                trial_active: plan === 'trial' && !!trialEnd && now < trialEnd,
+                trial_expired: plan === 'trial' && !!trialEnd && now >= trialEnd,
+                days_remaining: trialEnd ? Math.max(0, daysRemaining) : 0,
+                hours_remaining: trialEnd ? Math.max(0, Math.ceil(timeDiff / (1000 * 60 * 60))) : 0,
+                trial_end_date: trial_end_date,
+                trial_start_date: trial_start_date,
+                company: company,
+                user_id: id,
+                checked_at: new Date().toISOString(),
+            };
+            setTrialData(status);
+            setIsLoading(false);
+        } else {
+            setTrialData(null);
+        }
+    }, [userProfile]);
+
+    useEffect(() => {
+        calculateTrialStatus();
+    }, [calculateTrialStatus]);
+
+    const refreshTrialStatus = useCallback(() => {
+        refreshData('userProfile'); // Apenas refresca o userProfile
+    }, [refreshData]);
+
+    return { data: trialData, loading: isLoading || fluxDataLoading('coreUser'), error: null, refreshTrialStatus };
+}
+
+export function useMetrics(siteId: string): { data: MetricsData | null; loading: boolean; error: string | null; refreshMetrics: () => void } {
+    const { metrics, loading: fluxDataLoading, refreshData } = useFluxData();
+    // Este hook agora é mais um seletor. A busca real é feita em useFluxData.
+    // Se precisarmos de métricas específicas por siteId com mais frequência,
+    // useFluxData.metrics poderia ser um Map<siteId, MetricsData>.
+    // Por ora, ele pega a última métrica geral.
+    const refreshMetrics = useCallback(() => {
+        refreshData('metrics'); // Ou 'all' se as métricas dependem de outros dados atualizados
+    }, [refreshData]);
+    return { data: metrics, loading: fluxDataLoading('sitesAnalyses'), error: null, refreshMetrics };
+}
+
 export function useAnalyzeAdSense() {
   const { invokeAnalyzeAdSense, refreshData } = useFluxData();
   const [data, setData] = useState<AnalyzeAdSenseResponse | null>(null);
@@ -222,21 +376,19 @@ export function useAnalyzeAdSense() {
   const [error, setError] = useState<string | null>(null);
 
   const analyzeCSV = useCallback(async (
-    // Payload agora é um objeto único
-    payload: Omit<AnalyzeAdSensePayload, 'client_id' | 'timestamp' | 'user_id'> & { client_id: string } // client_id obrigatório
+    payloadData: Omit<AnalyzeAdSensePayload, 'client_id' | 'timestamp'> & { client_id: string }
   ) => {
     setLoading(true);
     setError(null);
     try {
       const fullPayload: AnalyzeAdSensePayload = {
-        ...payload,
-        timestamp: new Date().toISOString()
-        // client_id já está no payload
+        ...payloadData,
+        timestamp: new Date().toISOString(),
       };
       const result = await invokeAnalyzeAdSense(fullPayload);
       setData(result);
       if (result.success) {
-        // refreshData já é chamado dentro de invokeAnalyzeAdSenseImpl se necessário
+        // refreshData já é chamado dentro de invokeAnalyzeAdSenseImpl
       } else {
         setError(result.message || 'Análise falhou');
       }
@@ -247,7 +399,7 @@ export function useAnalyzeAdSense() {
     } finally {
       setLoading(false);
     }
-  }, [invokeAnalyzeAdSense]); // Removido refreshData daqui, pois é chamado internamente
+  }, [invokeAnalyzeAdSense]);
 
   return { data, loading, error, analyzeCSV };
 }
