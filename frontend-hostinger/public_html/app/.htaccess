@@ -1,0 +1,229 @@
+# ===================================================
+# 🚀 FLUX REVENUE - ENTERPRISE HTACCESS
+# Versão: 2.1 - Corrigido Service Worker + CDN Optimized
+# ===================================================
+
+# ✅ MIME Types otimizados para Hostinger
+<IfModule mod_mime.c>
+    AddType application/javascript .js .mjs
+    AddType text/css .css
+    AddType application/json .json
+    AddType image/x-icon .ico
+    AddType image/png .png
+    AddType image/jpeg .jpg .jpeg
+    AddType image/webp .webp
+    AddType image/svg+xml .svg
+    AddType text/plain .txt
+    AddType application/xml .xml
+    AddType application/woff2 .woff2
+    AddType application/woff .woff
+    AddType application/font-ttf .ttf
+    
+    # ✅ CRÍTICO: Service Worker MIME type específico
+    <FilesMatch "^(sw|service-worker|workbox-sw)\.js$">
+        Header set Content-Type "application/javascript; charset=utf-8"
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+</IfModule>
+
+# ✅ HEADERS DE SEGURANÇA ENTERPRISE
+<IfModule mod_headers.c>
+    # ✅ Content Security Policy ATUALIZADO para CDNs múltiplos
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdn.skypack.dev https://cykfgwzzvlnkqundyxrq.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cykfgwzzvlnkqundyxrq.supabase.co wss://cykfgwzzvlnkqundyxrq.supabase.co; frame-ancestors 'none'; base-uri 'self'; worker-src 'self' blob:;"
+    
+    # ✅ Headers de segurança robustos (mantidos)
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options DENY
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    
+    # ✅ CORS seguro e específico (mantido)
+    <FilesMatch "\.(js|css|json|woff2?|ttf|svg)$">
+        SetEnvIf Origin "^https?://(.*\.)?fluxrevenue\.com\.br$" CORS_ALLOW_ORIGIN=$0
+        SetEnvIf Origin "^https?://localhost(:[0-9]+)?$" CORS_ALLOW_ORIGIN=$0
+        SetEnvIf Origin "^https?://127\.0\.0\.1(:[0-9]+)?$" CORS_ALLOW_ORIGIN=$0
+        Header always set Access-Control-Allow-Origin "%{CORS_ALLOW_ORIGIN}e" env=CORS_ALLOW_ORIGIN
+        Header always set Access-Control-Allow-Methods "GET, OPTIONS"
+        Header always set Access-Control-Allow-Headers "Content-Type, Authorization, Cache-Control"
+        Header always set Vary "Origin, Accept-Encoding"
+    </FilesMatch>
+    
+    # ✅ Content-Type específicos com charset (mantidos)
+    <FilesMatch "\.js$">
+        Header always set Content-Type "application/javascript; charset=utf-8"
+    </FilesMatch>
+    
+    <FilesMatch "\.css$">
+        Header always set Content-Type "text/css; charset=utf-8"
+    </FilesMatch>
+    
+    <FilesMatch "\.json$">
+        Header always set Content-Type "application/json; charset=utf-8"
+    </FilesMatch>
+    
+    # ✅ Cache otimizado para assets com hash (mantido)
+    <FilesMatch "\.(js|css)$">
+        Header always set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    
+    # ✅ Cache para assets específicos do Flux Revenue (mantido)
+    <FilesMatch "(main|runtime|vendors|chunk)\.[a-f0-9]{8,}\.(js|css)$">
+        Header always set Cache-Control "public, max-age=31536000, immutable"
+        Header always set Vary "Accept-Encoding"
+    </FilesMatch>
+    
+    # ✅ Cache para manifest e ícones (mantido)
+    <FilesMatch "\.(ico|png|jpg|jpeg|webp|svg|woff2?|ttf)$">
+        Header always set Cache-Control "public, max-age=2592000"
+    </FilesMatch>
+    
+    # ✅ Sem cache para HTML (mantido)
+    <FilesMatch "\.html$">
+        Header always set Cache-Control "no-cache, no-store, must-revalidate"
+        Header always set Pragma "no-cache"
+        Header always set Expires "0"
+    </FilesMatch>
+</IfModule>
+
+# ✅ REWRITE RULES OTIMIZADAS
+<IfModule mod_rewrite.c>
+    Options -MultiViews
+    RewriteEngine On
+    
+    # ✅ Force HTTPS (mantido)
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP_HOST} !^localhost [NC]
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+    
+    # ✅ Remover trailing slash (mantido)
+    RewriteCond %{REQUEST_URI} !^/$
+    RewriteCond %{REQUEST_URI} /$
+    RewriteRule ^(.*)/$  /$1 [R=301,L]
+    
+    # ✅ Environment variables para MIME types (mantido)
+    RewriteCond %{REQUEST_URI} \.js$ [NC]
+    RewriteRule .* - [E=js_file:1]
+    
+    RewriteCond %{REQUEST_URI} \.css$ [NC]
+    RewriteRule .* - [E=css_file:1]
+    
+    # ✅ CRÍTICO: Service Worker deve retornar 404 se não existir
+    RewriteCond %{REQUEST_URI} ^/(sw|service-worker|workbox-sw)\.js$ [NC]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^.*$ - [R=404,L]
+    
+    # ✅ Assets estáticos prioritários (mantido)
+    RewriteCond %{REQUEST_URI} ^/(manifest\.json|favicon\.ico|logo192\.png|logo512\.png|robots\.txt|sitemap\.xml)$ [NC]
+    RewriteRule ^ - [L]
+    
+    # ✅ CRÍTICO: Pasta supabase COM headers corretos
+    RewriteCond %{REQUEST_URI} ^/supabase/ [NC]
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^supabase/.*\.js$ - [E=supabase_js:1,L]
+    
+    # ✅ Pasta static (React build assets) - mantido
+    RewriteCond %{REQUEST_URI} ^/static/ [NC]
+    RewriteRule ^ - [L]
+    
+    # ✅ API routes (mantido)
+    RewriteCond %{REQUEST_URI} ^/api/ [NC]
+    RewriteRule ^ - [L]
+    
+    # ✅ Arquivos que existem fisicamente (mantido)
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^.*$ - [L]
+    
+    # ✅ Diretórios que existem fisicamente (mantido)
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^.*$ - [L]
+    
+    # ✅ SPA Fallback - todas as outras rotas para index.html (mantido)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^.*$ /index.html [L]
+</IfModule>
+
+# ✅ EXPIRES HEADERS OTIMIZADOS (mantidos)
+<IfModule mod_expires.c>
+    ExpiresActive On
+    
+    # ✅ Assets com hash - cache longo
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType text/css "access plus 1 year"
+    
+    # ✅ Service Worker - SEM cache
+    <FilesMatch "^(sw|service-worker|workbox-sw)\.js$">
+        ExpiresDefault "access plus 0 seconds"
+    </FilesMatch>
+    
+    # ✅ Imagens - cache médio
+    ExpiresByType image/png "access plus 6 months"
+    ExpiresByType image/jpeg "access plus 6 months"
+    ExpiresByType image/webp "access plus 6 months"
+    ExpiresByType image/svg+xml "access plus 6 months"
+    ExpiresByType image/x-icon "access plus 1 year"
+    
+    # ✅ Fonts - cache longo
+    ExpiresByType application/font-woff2 "access plus 1 year"
+    ExpiresByType application/font-woff "access plus 1 year"
+    ExpiresByType application/font-ttf "access plus 1 year"
+    
+    # ✅ JSON - cache médio
+    ExpiresByType application/json "access plus 1 week"
+    
+    # ✅ HTML - sem cache
+    ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+
+# ✅ COMPRESSÃO GZIP OTIMIZADA (mantida)
+<IfModule mod_deflate.c>
+    # ✅ Comprimir tipos de arquivo específicos
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE application/xhtml+xml
+    AddOutputFilterByType DEFLATE application/rss+xml
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+    AddOutputFilterByType DEFLATE application/json
+    AddOutputFilterByType DEFLATE image/svg+xml
+    
+    # ✅ Não comprimir arquivos já comprimidos
+    SetEnvIfNoCase Request_URI \
+        \.(?:gif|jpe?g|png|zip|gz|bz2|rar|7z|woff2?)$ no-gzip dont-vary
+    
+    # ✅ Não comprimir para browsers antigos
+    BrowserMatch ^Mozilla/4 gzip-only-text/html
+    BrowserMatch ^Mozilla/4\.0[678] no-gzip
+    BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
+</IfModule>
+
+# ✅ SEGURANÇA AVANÇADA (mantida)
+<FilesMatch "(\.htaccess|\.env|\.git|package\.json|yarn\.lock|\.log|\.bak|\.swp|\.tmp)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# ✅ Proteção contra hotlinking (mantida)
+RewriteCond %{HTTP_REFERER} !^$
+RewriteCond %{HTTP_REFERER} !^https?://(.*\.)?fluxrevenue\.com\.br [NC]
+RewriteCond %{REQUEST_URI} \.(jpe?g|png|gif|webp)$ [NC]
+RewriteRule \.(jpe?g|png|gif|webp)$ - [F]
+
+# ✅ PÁGINAS DE ERRO CUSTOMIZADAS (mantidas)
+ErrorDocument 404 /index.html
+ErrorDocument 403 /index.html
+ErrorDocument 500 /index.html
+
+# ✅ LIMITE DE TAMANHO DE UPLOAD (mantido)
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 300
+</IfModule>
