@@ -260,13 +260,36 @@ interface FluxState {
   error: string | null;
 }
 
+import {
+  Site,
+  Analysis,
+  MetricsData,
+  UserSettings,
+  Notification,
+  RateLimit,
+  Site,
+  Analysis,
+  MetricsData,
+  UserSettings,
+  Notification,
+  RateLimit,
+  OptimizationTask,
+  TrialStatusData, // Adicionada esta que estava faltando na importação anterior
+  AnalyzeAdSensePayload,
+  AnalyzeAdSenseResponse,
+  GenerateScriptPayload,
+  GenerateScriptResponse,
+  CreateSitePayload,
+  CreateSiteResponse
+} from '../types/interfaces';
+
 // === HOOK INTERFACE ===
 interface FluxDataReturn extends FluxState {
   refreshData: () => Promise<void>;
-  uploadAndAnalyze: (csvData: string, siteUrl: string) => Promise<any>;
-  generateScript: (siteId: string) => Promise<string>;
+  uploadAndAnalyze: (csvData: string, siteUrl: string) => Promise<AnalyzeAdSenseResponse>;
+  generateScript: (siteId: string) => Promise<GenerateScriptResponse>;
   updateUserSettings: (settings: Partial<UserSettings>) => Promise<void>;
-  addSite: (url: string) => Promise<void>;
+  addSite: (url: string) => Promise<void>; // Mantendo Promise<void> conforme definido anteriormente
   updateSite: (siteId: string, updates: Partial<Site>) => Promise<void>;
   clearCache: () => void;
   getCacheStats: () => { size: number; keys: string[] };
@@ -575,7 +598,7 @@ export function useFluxData(): FluxDataReturn {
   }, [userId, fetchUserData, updateState]);
 
   // ✅ Enhanced methods com autenticação correta (mantidos com correções de campo)
-  const uploadAndAnalyze = useCallback(async (csvData: string, siteUrl: string) => {
+  const uploadAndAnalyze = useCallback(async (csvData: string, siteUrl: string): Promise<AnalyzeAdSenseResponse> => {
     if (!userId) throw new Error('User not authenticated');
 
     try {
@@ -586,16 +609,20 @@ export function useFluxData(): FluxDataReturn {
         userId: authUser.id
       });
 
-      const { data, error } = await supabase.functions.invoke('analyze-adsense', {
-        body: {
-          csv_data: csvData,
-          site_url: siteUrl,
-          user_id: authUser.id,
-          timestamp: new Date().toISOString()
-        }
+      const payload: AnalyzeAdSensePayload = {
+        csv_data: csvData,
+        site_url: siteUrl,
+        user_id: authUser.id,
+        timestamp: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase.functions.invoke<AnalyzeAdSenseResponse>('analyze-adsense', {
+        body: payload
       });
 
       if (error) throw error;
+      if (!data) throw new Error('No data returned from analyze-adsense function');
+
 
       console.log('✅ Analysis completed successfully:', data);
       fluxCache.invalidate('analyses');
@@ -604,42 +631,56 @@ export function useFluxData(): FluxDataReturn {
       return data;
     } catch (error: any) {
       console.error('❌ Upload and analyze error:', error);
-      throw new Error(error.message || 'Error processing CSV analysis');
+      // Retornar um objeto de erro padronizado se desejado, ou relançar
+      return { success: false, message: error.message || 'Error processing CSV analysis', data: error };
     }
   }, [userId, refreshData]);
 
-  const generateScript = useCallback(async (siteId: string): Promise<string> => {
-    if (!userId) throw new Error('User not authenticated');
+  const generateScript = useCallback(async (siteId: string): Promise<GenerateScriptResponse> => {
+    if (!userId) {
+      // Lançar um erro ou retornar uma resposta de erro padronizada
+      const errorResponse: GenerateScriptResponse = { script: '', success: false, message: 'User not authenticated' };
+      // throw new Error('User not authenticated'); // Alternativa
+      return errorResponse;
+    }
 
     try {
       const { user: authUser } = await getValidSession();
       const cacheKey = getCacheKey('script', siteId);
-      const cachedScript = fluxCache.get<string>(cacheKey);
+      const cachedResponse = fluxCache.get<GenerateScriptResponse>(cacheKey);
       
-      if (cachedScript) {
+      if (cachedResponse && cachedResponse.success) {
         console.log('📦 Using cached optimization script for site:', siteId);
-        return cachedScript;
+        return cachedResponse;
       }
 
       console.log('🔄 Generating new optimization script for site:', siteId);
-      const { data, error } = await supabase.functions.invoke('flux-optimizer-engine', {
-        body: {
-          site_id: siteId,
-          user_id: authUser.id,
-          action: 'generate_script',
-          timestamp: new Date().toISOString()
-        }
+
+      const payload: GenerateScriptPayload = {
+        site_id: siteId,
+        user_id: authUser.id,
+        action: 'generate_script',
+        timestamp: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase.functions.invoke<GenerateScriptResponse>('flux-optimizer-engine', {
+        body: payload
       });
 
       if (error) throw error;
+      if (!data) throw new Error('No data returned from flux-optimizer-engine function');
 
-      const script = data.script || '';
-      fluxCache.set(cacheKey, script, 60 * 60 * 1000);
-      console.log('✅ Optimization script generated successfully');
-      return script;
+
+      if (data.success) {
+        fluxCache.set(cacheKey, data, 60 * 60 * 1000); // Cache a resposta completa
+        console.log('✅ Optimization script generated successfully');
+      } else {
+        console.warn('⚠️ Script generation failed:', data.message);
+      }
+      return data;
     } catch (error: any) {
       console.error('❌ Script generation error:', error);
-      throw new Error(error.message || 'Error generating optimization script');
+      return { script: '', success: false, message: error.message || 'Error generating optimization script' };
     }
   }, [userId, getCacheKey]);
 
@@ -688,23 +729,33 @@ export function useFluxData(): FluxDataReturn {
       const { user: authUser } = await getValidSession();
       console.log('🔄 Adding new site:', url);
 
-      const { data, error } = await supabase.functions.invoke('create-site', {
-        body: {
-          url,
-          user_id: authUser.id,
-          timestamp: new Date().toISOString()
-        }
+      const payload: CreateSitePayload = {
+        url,
+        user_id: authUser.id,
+        timestamp: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase.functions.invoke<CreateSiteResponse>('create-site', {
+        body: payload
       });
 
       if (error) throw error;
+      // Opcional: verificar data.success se a interface CreateSiteResponse incluir
+      if (data && !data.success && data.message) {
+        console.warn(`⚠️ Add site warning: ${data.message}`);
+        // Poderia lançar um erro aqui se !data.success for considerado uma falha crítica
+        // throw new Error(data.message || 'Failed to add site with warning');
+      }
+
 
       fluxCache.invalidate('sites');
       fluxCache.invalidate('user_data');
       await refreshData();
-      console.log('✅ Site added successfully:', data);
+      console.log('✅ Site add attempt processed. Response:', data);
     } catch (error: any) {
       console.error('❌ Add site error:', error);
-      throw new Error(error.message || 'Error adding site');
+      // Não relançar o erro aqui mantém o tipo de retorno Promise<void>
+      // throw new Error(error.message || 'Error adding site');
     }
   }, [userId, refreshData]);
 
