@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flux Revenue ‑ Login</title>
+
+  <!-- SDK do Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Configurações globais -->
+  <script src="/supabase/configv2.js"></script>
+
+  <!-- Cliente Supabase corrigido -->
+  <script src="/supabase/flux-supabase.js"></script>
+  <style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.login-container {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.logo h1 {
+  color: #1c1c1e;
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.logo p {
+  color: #8e8e93;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  color: #1c1c1e;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 16px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  font-size: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #007aff;
+  background: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.15);
+}
+
+.login-btn {
+  width: 100%;
+  background: #007aff;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+  margin-bottom: 16px;
+}
+
+.login-btn:hover:not(:disabled) {
+  background: #0056cc;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 25px rgba(0, 122, 255, 0.3);
+}
+
+.login-btn:disabled {
+  background: #8e8e93;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.error-message {
+  background: #ff3b30;
+  color: white;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.error-message.hidden {
+  display: none;
+}
+
+.footer-links {
+  text-align: center;
+  margin-top: 24px;
+}
+
+.footer-links a {
+  color: #007aff;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0 16px;
+  transition: color 0.2s ease;
+}
+
+.footer-links a:hover {
+  color: #0056cc;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  z-index: 1000;
+}
+
+.loading-overlay.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.loading-steps {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  min-width: 300px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  padding: 12px 0;
+  opacity: 0.3;
+  transition: opacity 0.3s ease;
+}
+
+.step.active {
+  opacity: 1;
+}
+
+.step.completed {
+  opacity: 0.6;
+}
+
+.step-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #007aff;
+  margin-right: 12px;
+  position: relative;
+}
+
+.step.active .step-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (max-width: 480px) {
+  .login-container {
+    padding: 24px;
+    margin: 16px;
+  }
+  
+  .logo h1 {
+    font-size: 24px;
+  }
+}
+</style>
+</head>
+
+<body>
+  <div class="login-container">
+    <div class="logo">
+      <h1>Flux Revenue</h1>
+      <p>Entre na sua conta</p>
+    </div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="email">Email</label>
+       <input 
+  type="email" 
+  id="email" 
+  name="email" 
+  required 
+  autocomplete="email"
+  placeholder="seu@email.com"
+/>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Senha</label>
+       <input 
+  type="password" 
+  id="password" 
+  name="password" 
+  required 
+  autocomplete="current-password"
+  placeholder="••••••••"
+/>
+      </div>
+
+      <button type="submit" id="loginBtn" class="login-btn">Entrar</button>
+    </form>
+
+    <div id="errorMessage" class="error-message hidden"></div>
+
+    <div class="footer-links">
+      <a href="/signup.html">Criar conta</a>
+      <a href="mailto:suporte@fluxrevenue.com.br">Suporte</a>
+    </div>
+  </div>
+
+  <!-- Overlay de loading -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="loading-steps">
+      <div id="step1" class="step"><div class="step-icon"></div><span>Validando credenciais...</span></div>
+      <div id="step2" class="step"><div class="step-icon"></div><span>Configurando sessão...</span></div>
+      <div id="step3" class="step"><div class="step-icon"></div><span>Redirecionando...</span></div>
+    </div>
+  </div>
+
+<script>
+    /* -------------------------------------------------
+       VARS E REFERÊNCIAS DE ELEMENTOS
+    --------------------------------------------------*/
+    const loginForm     = document.getElementById('loginForm');
+    const loginBtn      = document.getElementById('loginBtn');
+    const errorMessage  = document.getElementById('errorMessage');
+    const loadingOverlay= document.getElementById('loadingOverlay');
+    const step1         = document.getElementById('step1');
+    const step2         = document.getElementById('step2');
+    const step3         = document.getElementById('step3');
+
+    // ✅ CRÍTICO: Estado de inicialização
+    let supabaseClient = null;
+    let initializationAttempts = 0;
+
+    /* -------------------------------------------------
+       UTILITÁRIOS DE UI
+    --------------------------------------------------*/
+    function showLoading()  { loadingOverlay.classList.add('visible'); }
+    function hideLoading()  { loadingOverlay.classList.remove('visible'); }
+    function showError(msg) {
+      errorMessage.textContent = msg;
+      errorMessage.classList.remove('hidden');
+      loginBtn.disabled = false;
+      setTimeout(() => errorMessage.classList.add('hidden'), 8000);
+    }
+
+    /* -------------------------------------------------
+       ✅ CRÍTICO: Aguardar Supabase com verificação robusta
+    --------------------------------------------------*/
+    function waitForSupabase() {
+      initializationAttempts++;
+      console.log(`🔍 [Login] Tentativa ${initializationAttempts} - aguardando Supabase...`);
+      
+      // ✅ Verificar se dependencies existem E estão funcionais
+      if (!window.supabase || !window.FluxConfig || typeof window.supabase.auth?.signInWithPassword !== 'function') {
+        if (initializationAttempts > 50) { // 5 segundos máximo
+          console.error('❌ [Login] Timeout aguardando Supabase após 50 tentativas');
+          showError('Erro de inicialização. Recarregue a página.');
+          return;
+        }
+        return setTimeout(waitForSupabase, 100);
+      }
+      
+      // ✅ Supabase está pronto
+      supabaseClient = window.supabase;
+      console.log('✅ [Login] Supabase inicializado após', initializationAttempts, 'tentativas');
+      console.log('✅ [Login] FluxConfig disponível:', !!window.FluxConfig);
+      checkExistingSession();
+    }
+
+    /* -------------------------------------------------
+       Verifica se já existe sessão válida
+    --------------------------------------------------*/
+    async function checkExistingSession() {
+      try {
+        if (!supabaseClient || typeof supabaseClient.auth?.getUser !== 'function') {
+          console.warn('⚠️ [Login] supabaseClient não está pronto em checkExistingSession');
+          return;
+        }
+        
+        console.log('🔍 [Login] Verificando sessão existente...');
+        const { data: { user }, error } = await supabaseClient.auth.getUser();
+        
+        if (error) {
+          console.log('🔍 [Login] Nenhuma sessão existente:', error.message);
+          return;
+        }
+        
+        if (user) {
+          console.log('✅ [Login] Usuário já logado:', user.email, '- redirecionando...');
+          window.location.replace('https://app.fluxrevenue.com.br/');
+        } else {
+          console.log('🔍 [Login] Nenhum usuário logado');
+        }
+      } catch (error) {
+        console.warn('⚠️ [Login] Erro ao verificar sessão:', error);
+      }
+    }
+
+    /* -------------------------------------------------
+       ✅ CORREÇÃO: Função para salvar cookies cross-domain após login
+    --------------------------------------------------*/
+    function saveCrossDomainCookies(session) {
+      try {
+        console.log('🍪 [Login] Salvando cookies cross-domain...');
+        
+        const maxAge = 100 * 365 * 24 * 60 * 60; // 100 anos
+        const secure = window.location.protocol === 'https:';
+        
+        // ✅ Salvar tokens individuais
+        document.cookie = `flux-access-token=${session.access_token}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
+        document.cookie = `flux-refresh-token=${session.refresh_token}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
+        
+        // ✅ Salvar sessão completa
+        const sessionData = JSON.stringify({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          expires_at: session.expires_at,
+          user: session.user
+        });
+        
+        document.cookie = `sb-flux-auth-token=${encodeURIComponent(sessionData)}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
+        
+        console.log('✅ [Login] Cookies cross-domain salvos:', {
+          user: session.user.email,
+          domain: '.fluxrevenue.com.br'
+        });
+        
+        return true;
+      } catch (error) {
+        console.error('❌ [Login] Erro ao salvar cookies cross-domain:', error);
+        return false;
+      }
+    }
+
+    /* -------------------------------------------------
+       ✅ SUBMIT DO FORMULÁRIO - VERSÃO COM CROSS-DOMAIN
+    --------------------------------------------------*/
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (loginBtn.disabled) return;
+
+      // ✅ CRÍTICO: Verificar se Supabase está realmente pronto
+      if (!supabaseClient || typeof supabaseClient.auth?.signInWithPassword !== 'function') {
+        console.warn('⚠️ [Login] supabaseClient não está pronto no submit');
+        showError('Sistema ainda inicializando. Aguarde alguns segundos.');
+        return;
+      }
+
+      const email    = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      if (!email || !password) { 
+        showError('Preencha todos os campos.'); 
+        return; 
+      }
+
+      try {
+        loginBtn.disabled = true;
+        showLoading();
+        step1.classList.add('active');
+
+        console.log('🔐 [Login] Tentando login para:', email);
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        
+        if (error) {
+          console.error('❌ [Login] Erro de autenticação:', error);
+          throw error;
+        }
+
+        console.log('✅ [Login] Login bem-sucedido:', data.user?.email);
+        step1.classList.add('completed');
+        step2.classList.add('active');
+
+        // ✅ CORREÇÃO: Salvar cookies cross-domain imediatamente
+        if (data.session) {
+          saveCrossDomainCookies(data.session);
+        }
+
+        // ✅ Aguardar callback de SIGNED_IN
+        let authHandled = false;
+        const authUnsubscribe = supabaseClient.auth.onAuthStateChange((evt, session) => {
+          console.log('🔐 [Login] Auth state change:', evt, session ? 'com sessão' : 'sem sessão');
+          
+          if (evt === 'SIGNED_IN' && session && !authHandled) {
+            authHandled = true;
+            step2.classList.add('completed');
+            step3.classList.add('active');
+            
+            // ✅ Salvar cookies novamente no callback
+            saveCrossDomainCookies(session);
+            
+            // ✅ Cleanup do listener
+            if (authUnsubscribe?.subscription) {
+              authUnsubscribe.subscription.unsubscribe();
+            }
+            
+            setTimeout(() => {
+              console.log('🚀 [Login] Redirecionando para dashboard...');
+              hideLoading();
+              window.location.replace('https://app.fluxrevenue.com.br/');
+            }, 1200);
+          }
+        });
+
+        // ✅ Timeout de segurança caso o callback não dispare
+        setTimeout(() => {
+          if (loginBtn.disabled && !authHandled) {
+            console.log('🔄 [Login] Timeout callback, redirecionando diretamente...');
+            authHandled = true;
+            hideLoading();
+            window.location.replace('https://app.fluxrevenue.com.br/');
+          }
+        }, 5000);
+
+      } catch (err) {
+        hideLoading();
+        loginBtn.disabled = false;
+        
+        let msg = 'Erro ao fazer login. Tente novamente.';
+        if (err.message?.includes('Invalid login credentials')) msg = 'Email ou senha incorretos.';
+        if (err.message?.includes('Email not confirmed'))      msg = 'Email não confirmado.';
+        if (err.message?.includes('Too many requests'))        msg = 'Muitas tentativas. Aguarde alguns minutos.';
+
+        showError(msg);
+        console.error('❌ [Login] Erro completo:', err);
+      }
+    });
+
+    /* -------------------------------------------------
+       ✅ INICIALIZAÇÃO ÚNICA
+    --------------------------------------------------*/
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('🚀 [Login] DOM carregado, iniciando waitForSupabase...');
+      waitForSupabase();
+    });
+
+    // ✅ Debug helper
+    window.debugLogin = () => {
+      console.log('🔍 Debug Login State:');
+      console.log('- supabaseClient:', !!supabaseClient);
+      console.log('- window.supabase:', !!window.supabase);
+      console.log('- window.FluxConfig:', !!window.FluxConfig);
+      console.log('- initializationAttempts:', initializationAttempts);
+      console.log('- loginBtn.disabled:', loginBtn.disabled);
+      
+      // ✅ Debug cookies
+      const cookies = document.cookie.split(';');
+      console.log('- cookies:', cookies.filter(c => c.includes('flux') || c.includes('sb-')));
+    };
+</script>
+</body>
+</html>
