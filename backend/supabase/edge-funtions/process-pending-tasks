@@ -1,253 +1,162 @@
-// backend/supabase/edge-funtions/process-pending-tasks/index.ts
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-// CORS Headers
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const allowedOrigins = [
   'https://fluxrevenue.com.br',
-  'https://app.fluxrevenue.com.br',
+  'https://app.fluxrevenue.com.br'
 ];
-
-function getCorsHeaders(requestHeaders: Headers) {
-  const requestOrigin = requestHeaders.get('origin') || "";
-  const effectiveOrigin = allowedOrigins.includes(requestOrigin) ? 
-    requestOrigin : 
-    (requestOrigin.startsWith('http://localhost:') ? requestOrigin : allowedOrigins[0]);
-
-  return {
-    'Access-Control-Allow-Origin': effectiveOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS', 
-  };
-}
-
-interface OptimizationAction { 
-  type: string;
-  title: string;
-  settings?: any;
-  estimated_impact?: number;
-  implementation_time?: number;
-}
-
-interface SiteAnalysisDataForOptimizer {
-  optimization_score?: number;
-  total_revenue?: number;
-  avg_rpm?: number;
-}
-
-interface TaskActionsPayload {
-    optimizations: OptimizationAction[];
-    analysis_data?: SiteAnalysisDataForOptimizer | null;
-}
-
-interface ProcessedOptimizationResults {
-  mobile_optimization_rules: any;
-  ad_placement_rules: any;
-  lazy_loading_config: any;
-  generated_script: string; 
-  installation_instructions: string[]; 
-  summary_of_applied: string[];
-}
-
-async function processOptimizationActions(
-  taskActionsFromDb: TaskActionsPayload | null | undefined, 
-  siteId: string
-): Promise<ProcessedOptimizationResults> {
-  const selectedActions = taskActionsFromDb?.optimizations || [];
-  console.log(`process-pending-tasks: Processing ${selectedActions.length} actions for site ${siteId} from task.actions`);
-
-  let generatedScript = `// Flux Revenue - Batch Processed Script for site ${siteId}\n`;
-  generatedScript += `// Generated: ${new Date().toISOString()}\n`;
-  generatedScript += `console.log('[FluxRevenue] Batch processed script initializing...');\n`;
-  
-  const appliedRulesSummary: string[] = [];
-  const mobileRules: any = { enabled: false, responsive_ads: false };
-  const placementRules: any = { max_ads_per_page: 3 };
-  const lazyLoadRules: any = { enabled: false };
-  const instructions: string[] = ["Script aplicado via processamento em lote."];
-
-  if (selectedActions.length > 0) {
-    selectedActions.forEach((action: OptimizationAction) => {
-      generatedScript += `\n// Applying from batch: ${action.title || action.type}\n`;
-      appliedRulesSummary.push(action.title || action.type);
-      switch (action.type) {
-        case 'auto_ads':
-          generatedScript += `console.log('[FluxRevenue] Batch: Auto Ads logic for type: ${action.type} applied.');\n`;
-          mobileRules.enabled = true;
-          break;
-        case 'lazy_loading':
-          generatedScript += `console.log('[FluxRevenue] Batch: Lazy Loading logic for type: ${action.type} applied.');\n`;
-          lazyLoadRules.enabled = true;
-          break;
-        default:
-          generatedScript += `console.warn('[FluxRevenue] Batch: Unknown optimization type: ${action.type}');\n`;
-      }
+const requestOrigin = req.headers.get('origin');
+const corsHeaders = {
+  'Access-Control-Allow-Origin': allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0],
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+};
+serve(async (req1)=>{
+  if (req1.method === 'OPTIONS') {
+    return new Response('ok', {
+      headers: corsHeaders
     });
-  } else {
-    generatedScript += `console.log('[FluxRevenue] Batch: No specific actions in task, applying default strategy.');\n`;
-    appliedRulesSummary.push("Default Batch Strategy");
   }
-  
-  generatedScript += `\nconsole.log('[FluxRevenue] Batch script setup complete for site ${siteId}.');\n`;
-
-  return {
-    mobile_optimization_rules: mobileRules,
-    ad_placement_rules: placementRules,
-    lazy_loading_config: lazyLoadRules,
-    generated_script: generatedScript, 
-    installation_instructions: instructions,
-    summary_of_applied: appliedRulesSummary,
-  };
-}
-
-async function executeSingleOptimizationTask(supabase: SupabaseClient, task: any) {
-  const startTime = Date.now();
-  let statusToUpdate: 'completed' | 'error' = 'processing';
-  let errorMessage: string | null = null;
-  let finalResultsData: any = {};
-
-  try {
-    console.log(`process-pending-tasks: Executing task ${task.id} for site ${task.site_id}`);
-    await supabase.from('optimization_tasks').update({
-      status: 'processing',
-      started_at: new Date().toISOString()
-    }).eq('id', task.id);
-
-    const processedActionsResult = await processOptimizationActions(task.actions as TaskActionsPayload, task.site_id);
-
-    const configData = {
-      site_id: task.site_id,
-      task_id: task.id,
-      config_name: `Config for Task ${task.id.substring(0,8)} from Batch`,
-      mobile_optimization: processedActionsResult.mobile_optimization_rules,
-      ad_placement_rules: processedActionsResult.ad_placement_rules,
-      lazy_loading_config: processedActionsResult.lazy_loading_config,
-      config: { 
-        summary: processedActionsResult.summary_of_applied,
-        generated_script_snapshot: processedActionsResult.generated_script.substring(0, 500) + "..." 
-      },
-      is_active: true, 
-      auto_apply: true, 
-      created_at: new Date().toISOString(),
-    };
-
-    const { data: newConfig, error: configError } = await supabase
-      .from('optimizer_configs')
-      .insert(configData)
-      .select('id')
-      .single();
-
-    if (configError) {
-      throw new Error(`Failed to save optimizer config: ${configError.message}`);
-    }
-    
-    statusToUpdate = 'completed';
-    finalResultsData = {
-      config_id: newConfig.id,
-      summary: processedActionsResult.summary_of_applied,
-      optimizations_applied_count: processedActionsResult.summary_of_applied.length,
-    };
-
-  } catch (error: any) {
-    console.error(`process-pending-tasks: Error executing task ${task.id}:`, error);
-    statusToUpdate = 'error';
-    errorMessage = error.message;
-  } finally {
-    const processingTimeMs = Date.now() - startTime;
-    await supabase.from('optimization_tasks').update({
-      status: statusToUpdate,
-      completed_at: new Date().toISOString(),
-      processing_time_ms: processingTimeMs,
-      results: finalResultsData,
-      error_message: errorMessage
-    }).eq('id', task.id);
-    console.log(`process-pending-tasks: Task ${task.id} finished with status ${statusToUpdate} in ${processingTimeMs}ms`);
-  }
-
-  if (statusToUpdate !== 'completed') {
-    throw new Error(errorMessage || `Erro desconhecido ao processar tarefa ${task.id}`);
-  }
-  return { success: true, task_id: task.id, config_id: finalResultsData.config_id };
-}
-
-Deno.serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req.headers);
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders, status: 200 });
-  }
-
-  const authHeader = req.headers.get('Authorization');
-  const serviceKey = `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`;
-  const internalSecret = req.headers.get('X-Internal-Secret');
-  const expectedInternalSecret = Deno.env.get('INTERNAL_SCHEDULER_SECRET');
-
-  if (!authHeader || authHeader !== serviceKey) {
-      if (!expectedInternalSecret || internalSecret !== expectedInternalSecret) {
-        console.warn('process-pending-tasks: Tentativa de acesso não autorizado.');
-        return new Response(JSON.stringify({ error: 'Não autorizado.' }), {
-            status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-    }
-  }
-
   const startTime = Date.now();
   try {
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
-    
-    console.log('process-pending-tasks: Iniciando processamento de tarefas pendentes...');
-
-    const { data: pendingTasks, error: fetchError } = await supabaseAdmin
-      .from('optimization_tasks')
-      .select('id, site_id, actions, status') 
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(10); 
-
+    const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    console.log('🔄 Starting pending tasks cleanup job...');
+    // 1. BUSCAR TASKS PENDENTES ANTIGAS (>10 minutos)
+    const { data: pendingTasks, error: fetchError } = await supabase.from('optimization_tasks').select('id, analysis_id, site_id, created_at, actions').eq('status', 'pending').lt('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString()).order('created_at', {
+      ascending: true
+    }).limit(20);
     if (fetchError) {
-      throw new Error(`Falha ao buscar tarefas pendentes: ${fetchError.message}`);
+      throw new Error(`Failed to fetch pending tasks: ${fetchError.message}`);
     }
-
-    const summary = {
-      processed_count: 0,
-      failed_count: 0,
-      total_queried: pendingTasks?.length || 0,
-      errors: [] as { task_id: string, error: string }[]
+    const result = {
+      processed: 0,
+      failed: 0,
+      total_pending: pendingTasks?.length || 0,
+      execution_time_ms: 0,
+      errors: []
     };
-
+    console.log(`📊 Found ${result.total_pending} pending tasks to process`);
     if (!pendingTasks || pendingTasks.length === 0) {
-      console.log('process-pending-tasks: Nenhuma tarefa pendente encontrada para processar.');
-      return new Response(JSON.stringify({ success: true, message: 'Nenhuma tarefa pendente encontrada.', summary }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200
+      result.execution_time_ms = Date.now() - startTime;
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'No pending tasks found',
+        result
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        },
+        status: 200
       });
     }
-
-    console.log(`process-pending-tasks: Encontradas ${summary.total_queried} tarefas pendentes.`);
-
-    for (const task of pendingTasks) {
+    // 2. PROCESSAR CADA TASK PENDENTE
+    for (const task of pendingTasks){
       try {
-        await executeSingleOptimizationTask(supabaseAdmin, task);
-        summary.processed_count++;
-      } catch (taskError: any) {
-        summary.failed_count++;
-        summary.errors.push({ task_id: task.id, error: taskError.message });
+        console.log(`⚡ Processing task: ${task.id}`);
+        // Marcar como processando
+        await supabase.from('optimization_tasks').update({
+          status: 'processing',
+          started_at: new Date().toISOString()
+        }).eq('id', task.id);
+        // Criar configuração de otimização
+        const optimizationConfig = {
+          mobile_optimization: {
+            enabled: true,
+            responsive_ads: true,
+            touch_friendly: true
+          },
+          ad_placement_rules: {
+            max_ads_per_page: 3,
+            min_content_ratio: 0.6,
+            avoid_fold_limit: true
+          },
+          lazy_loading_config: {
+            enabled: true,
+            threshold: 200,
+            ads_delay: 500
+          },
+          cron_processed: true,
+          processed_at: new Date().toISOString()
+        };
+        // Salvar config no optimizer_configs
+        const configId = `config_cron_${task.id.split('_')[1]}_${Date.now()}`;
+        const { error: configError } = await supabase.from('optimizer_configs').insert({
+          id: configId,
+          site_id: task.site_id,
+          config_name: 'Cron Auto-Generated Config',
+          config: optimizationConfig,
+          is_active: true,
+          auto_apply: true,
+          max_daily_changes: 5,
+          safety_limits: {
+            max_ctr_change: 0.2,
+            min_revenue_threshold: 0.95
+          },
+          status: 'active',
+          created_at: new Date().toISOString()
+        });
+        if (configError) {
+          throw new Error(`Failed to create config: ${configError.message}`);
+        }
+        // Marcar task como completed
+        await supabase.from('optimization_tasks').update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          results: optimizationConfig
+        }).eq('id', task.id);
+        // Marcar análise como otimizada
+        if (task.analysis_id) {
+          await supabase.from('adsense_analyses').update({
+            optimizer_executed: true
+          }).eq('id', task.analysis_id);
+        }
+        result.processed++;
+        console.log(`✅ Task ${task.id} processed successfully`);
+      } catch (taskError) {
+        console.error(`❌ Failed to process task ${task.id}:`, taskError);
+        // Marcar task como erro
+        await supabase.from('optimization_tasks').update({
+          status: 'error',
+          completed_at: new Date().toISOString(),
+          error_message: taskError.message
+        }).eq('id', task.id);
+        result.failed++;
+        result.errors.push({
+          task_id: task.id,
+          error: taskError.message
+        });
       }
     }
-
-    const executionTimeMs = Date.now() - startTime;
-    console.log(`process-pending-tasks: Processamento em lote concluído em ${executionTimeMs}ms. Processadas: ${summary.processed_count}, Falhas: ${summary.failed_count}`);
-    
-    return new Response(JSON.stringify({ success: true, message: 'Processamento em lote concluído.', summary, execution_time_ms: executionTimeMs }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200
+    result.execution_time_ms = Date.now() - startTime;
+    // 3. LOG DE RESULTADO
+    console.log(`🎯 Cron job completed:`);
+    console.log(`   - Processed: ${result.processed}`);
+    console.log(`   - Failed: ${result.failed}`);
+    console.log(`   - Execution time: ${result.execution_time_ms}ms`);
+    return new Response(JSON.stringify({
+      success: true,
+      message: `Processed ${result.processed} tasks, ${result.failed} failed`,
+      result
+    }), {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      status: 200
     });
-
-  } catch (error: any) {
-    const executionTimeMs = Date.now() - startTime;
-    console.error('process-pending-tasks: Erro geral na função:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message, execution_time_ms: executionTimeMs }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500
+  } catch (error) {
+    const execution_time = Date.now() - startTime;
+    console.error('💥 Cron job failed:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      execution_time_ms: execution_time
+    }), {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      status: 500
     });
   }
 });

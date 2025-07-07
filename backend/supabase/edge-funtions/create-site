@@ -1,161 +1,76 @@
-// backend/supabase/edge-funtions/create-site/index.ts
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-// CORS Headers
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const allowedOrigins = [
   'https://fluxrevenue.com.br',
-  'https://app.fluxrevenue.com.br',
-  // Adicionar localhost para desenvolvimento local, se necessário
-  // Ex: 'http://localhost:3000', 'http://localhost:8000' (para Supabase CLI local)
+  'https://app.fluxrevenue.com.br'
 ];
-
-function getCorsHeaders(requestHeaders: Headers) {
-  const requestOrigin = requestHeaders.get('origin') || "";
-  const effectiveOrigin = allowedOrigins.includes(requestOrigin) ? 
-    requestOrigin : 
-    (requestOrigin.startsWith('http://localhost:') ? requestOrigin : allowedOrigins[0]);
-
-  return {
-    'Access-Control-Allow-Origin': effectiveOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-  };
-}
-
-interface SiteCreatePayload {
-  url: string;
-  name?: string; 
-  monthly_pageviews: number;
-  current_rpm: number;
-}
-
-Deno.serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req.headers);
-
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders, status: 200 });
+const requestOrigin = req.headers.get('origin');
+const corsHeaders = {
+  'Access-Control-Allow-Origin': allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0],
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+};
+Deno.serve(async (req1)=>{
+  if (req1.method === 'OPTIONS') {
+    return new Response('ok', {
+      headers: corsHeaders
+    });
   }
-
   try {
-    const authHeader = req.headers.get('Authorization');
+    // --- Validação manual do JWT ---
+    const authHeader = req1.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.warn('create-site: Auth header ausente ou mal formatado');
-      return new Response(JSON.stringify({ error: 'Token de autorização não fornecido ou mal formatado.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401
-      });
+      throw new Error('Token de autorização não fornecido');
     }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
-
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('create-site: Variáveis de ambiente SUPABASE_URL ou SUPABASE_ANON_KEY não definidas.');
-      return new Response(JSON.stringify({ error: 'Configuração do servidor incompleta.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      });
+    const token = authHeader.replace('Bearer ', '');
+    let userId, payload;
+    try {
+      payload = JSON.parse(atob(token.split('.')[1]));
+      if (!payload.sub) throw new Error('Token inválido');
+      userId = payload.sub;
+    } catch (error) {
+      throw new Error('Token inválido');
     }
-    
-    const supabaseAnonClient = createClient(supabaseUrl, supabaseAnonKey,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: { user: authUser }, error: authErr } = await supabaseAnonClient.auth.getUser();
-
-    if (authErr || !authUser) {
-      console.error('create-site: Erro de autenticação ou token inválido:', authErr);
-      return new Response(JSON.stringify({ error: `Autenticação falhou: ${authErr?.message || 'Token inválido.'}` }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401
-      });
+    // --- Recebe dados do site ---
+    const { url, monthly_pageviews, current_rpm } = await req1.json();
+    if (!url || !monthly_pageviews || !current_rpm) {
+      throw new Error('URL, pageviews mensais e RPM atual são obrigatórios');
     }
-    const userId = authUser.id;
-    console.log('create-site: Usuário autenticado:', userId);
-
-    const payload: SiteCreatePayload = await req.json();
-    const { url, name, monthly_pageviews, current_rpm } = payload;
-
-    if (!url || typeof monthly_pageviews !== 'number' || typeof current_rpm !== 'number') {
-      return new Response(JSON.stringify({ error: 'URL, pageviews mensais e RPM atual são obrigatórios e devem ser dos tipos corretos.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400 
-      });
-    }
-    if (url.trim() === "" || monthly_pageviews <= 0 || current_rpm < 0) {
-        return new Response(JSON.stringify({ error: 'Valores inválidos para URL, pageviews ou RPM.' }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 400
-        });
-    }
-    
-    const optimization_token = `flux_${userId.substring(0, 8)}_${crypto.randomUUID().replace(/-/g, '')}`;
+    // --- Gera IDs únicos ---
+    const siteId = `site_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const optimization_token = `flux_${userId.substring(0, 8)}_${crypto.randomUUID()}`;
     const target_rpm = current_rpm * 1.37;
-
-    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!supabaseServiceRoleKey) {
-      console.error('create-site: Variável de ambiente SUPABASE_SERVICE_ROLE_KEY não definida.');
-      return new Response(JSON.stringify({ error: 'Configuração crítica do servidor ausente.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      });
-    }
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-    const siteToInsert = {
+    // --- Usa Service Role Key para inserir ---
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    const { data: newSite, error: insertError } = await supabaseAdmin.from('sites').insert({
+      id: siteId,
       client_id: userId,
-      url: url.trim(),
-      name: name?.trim() || url.trim(),
-      monthly_pageviews: Math.floor(monthly_pageviews),
+      url: url,
+      monthly_pageviews: monthly_pageviews,
       current_rpm: current_rpm,
-      target_rpm: parseFloat(target_rpm.toFixed(2)),
+      target_rpm: target_rpm,
       optimization_token: optimization_token,
       script_installed: false,
-      optimization_enabled: true,
-    };
-
-    console.log('create-site: Inserindo site:', siteToInsert);
-    const { data: newSite, error: insertError } = await supabaseAdmin
-      .from('sites')
-      .insert(siteToInsert)
-      .select() 
-      .single();
-
+      created_at: new Date().toISOString()
+    }).select().single();
     if (insertError) {
-      console.error('create-site: Erro ao inserir site no DB:', insertError);
-      if (insertError.code === '23505') { 
-        return new Response(JSON.stringify({ error: `Erro ao criar site: A URL '${url}' já pode estar registrada.` }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 409 
-        });
-      }
-      return new Response(JSON.stringify({ error: `Erro ao criar site: ${insertError.message}` }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500 
-      });
+      throw new Error(`Erro ao criar site: ${insertError.message}`);
     }
-    if (!newSite) {
-        console.error('create-site: Nenhum dado retornado após inserção bem-sucedida.');
-        return new Response(JSON.stringify({ error: 'Falha ao criar o site, nenhum dado retornado.' }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 500
-        });
-    }
-
-    console.log('create-site: Site criado com sucesso:', newSite.id);
     return new Response(JSON.stringify(newSite), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 201 
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      status: 201
     });
-
-  } catch (error: any) {
-    console.error('create-site: Erro geral na função:', error);
-    const status = (error instanceof SyntaxError && error.message.includes("JSON")) ? 400 : (error.status || 500);
-    const message = error.message || 'Erro interno do servidor.';
-    return new Response(JSON.stringify({ error: message, details: error.toString() }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: error.message
+    }), {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      status: 500
     });
   }
 });

@@ -1,174 +1,120 @@
-// backend/supabase/edge-funtions/flux-optimizer-script/index.ts
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-// CORS Headers
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+// Headers CORS
 const allowedOrigins = [
   'https://fluxrevenue.com.br',
-  'https://app.fluxrevenue.com.br',
+  'https://app.fluxrevenue.com.br'
 ];
-
-function getCorsHeaders(requestHeaders: Headers) {
-  const requestOrigin = requestHeaders.get('origin') || "";
-  const effectiveOrigin = allowedOrigins.includes(requestOrigin) ? 
-    requestOrigin : 
-    (requestOrigin.startsWith('http://localhost:') ? requestOrigin : allowedOrigins[0]);
-
-  return {
-    'Access-Control-Allow-Origin': effectiveOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-optimization-token',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-  };
-}
-
-async function getActiveOptimizations(siteId: string, supabase: SupabaseClient) {
+const requestOrigin = req.headers.get('origin');
+const corsHeaders = {
+  'Access-Control-Allow-Origin': allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0],
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+};
+// Função para buscar otimizações ativas
+async function getActiveOptimizations(siteId, supabase) {
   try {
-    console.log(`flux-optimizer-script: Fetching active configurations for site: ${siteId}`);
-    const { data: configs, error } = await supabase
-      .from('optimizer_configs')
-      .select('config_name, config')
-      .eq('site_id', siteId)
-      .eq('is_active', true);
-      
+    console.log('Fetching optimizations for site:', siteId);
+    const { data: configs, error } = await supabase.from('optimizer_configs').select('*').eq('site_id', siteId).eq('is_active', true);
     if (error) {
-      console.error(`flux-optimizer-script: Database error fetching optimizer_configs for site ${siteId}:`, error);
+      console.error('Database error:', error);
       throw error;
     }
-    console.log(`flux-optimizer-script: Found ${configs?.length || 0} active configurations for site ${siteId}.`);
+    console.log('Found configurations:', configs?.length || 0);
     return configs || [];
   } catch (error) {
-    console.error(`flux-optimizer-script: Error in getActiveOptimizations for site ${siteId}:`, error);
-    throw error; 
+    console.error('Error fetching optimizations:', error);
+    return [];
   }
 }
-
-function generateOptimizedScript(configs: any[], siteId: string) {
-  console.log(`flux-optimizer-script: Generating script for ${configs.length} configurations, site ${siteId}`);
-  let script = `// Flux Revenue - Optimization Script v2.1\n`;
-  script += `// Site ID: ${siteId}\n`;
+// Função para gerar script otimizado
+function generateOptimizedScript(configs) {
+  console.log('Generating script for configs:', configs.length);
+  let script = `// Flux Revenue - Optimization Script\n`;
   script += `// Generated: ${new Date().toISOString()}\n`;
-  script += `// Active optimizations: ${configs.length}\n\n`;
-  script += `console.log('[FluxRevenue] Initializing Optimization Script v2.1 for site ${siteId}...');\n`;
-
+  script += `// Site optimizations: ${configs.length} active\n\n`;
   if (configs.length === 0) {
-    script += `console.log('[FluxRevenue] No active optimizations found for this site.');\n`;
+    script += `console.log('Flux Revenue: No active optimizations found');\n`;
     return script;
   }
-
-  configs.forEach((config, index) => {
-    const configName = config.config_name || `CONFIG_${index + 1}`;
-    script += `// --- Optimization: ${configName.toUpperCase()} ---\n`;
-    if (config.config && typeof config.config.code === 'string' && config.config.code.trim() !== '') {
-      script += `try {\n`;
-      script += `  console.log('[FluxRevenue] Applying ${configName}...');\n`;
-      script += `  ${config.config.code.trim()}\n`;
-      script += `  console.log('[FluxRevenue] ${configName} applied.');\n`;
-      script += `} catch(e) { console.error('[FluxRevenue] Error in ${configName}:', e); }\n\n`;
+  configs.forEach((config, index)=>{
+    script += `// ${config.config_name.toUpperCase()} OPTIMIZATION (${index + 1}/${configs.length})\n`;
+    if (config.config && config.config.code) {
+      script += config.config.code + '\n\n';
     } else {
-      script += `console.log('[FluxRevenue] ${configName} loaded (no executable code provided).');\n\n`;
+      script += `console.log('Flux Revenue: ${config.config_name} optimization loaded');\n\n`;
     }
   });
-
-  script += `console.log('[FluxRevenue] All ${configs.length} optimizations processed for site ${siteId}. Script setup complete.');\n`;
+  script += `// Flux Revenue optimization script completed\n`;
+  script += `console.log('Flux Revenue: ${configs.length} optimizations applied successfully');\n`;
   return script;
 }
-
-Deno.serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req.headers);
-
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders, status: 200 });
+// Função principal da Edge Function
+Deno.serve(async (req1)=>{
+  // Handle CORS preflight
+  if (req1.method === 'OPTIONS') {
+    return new Response('ok', {
+      headers: corsHeaders
+    });
   }
-
   const startTime = Date.now();
-  let errorResponseScript = (message: string) => `// Flux Revenue - Error\n// ${message}\nconsole.error('Flux Revenue Error: ${message}');`;
-
   try {
-    console.log('flux-optimizer-script: Request received:', { method: req.method, url: req.url });
-
-    if (req.method !== 'GET') {
-      return new Response(errorResponseScript('Method Not Allowed. Use GET.'), {
-        status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/javascript; charset=utf-8', 'X-Flux-Error': 'Method Not Allowed' }
-      });
+    console.log('Script generation request started:', {
+      method: req1.method,
+      url: req1.url,
+      timestamp: new Date().toISOString()
+    });
+    // Validar método HTTP
+    if (req1.method !== 'GET') {
+      throw new Error('Method not allowed. Use GET.');
     }
-
-    const url = new URL(req.url);
+    // Extrair parâmetros da URL
+    const url = new URL(req1.url);
     const siteId = url.searchParams.get('site');
-    const token = url.searchParams.get('token');
     const version = url.searchParams.get('v') || 'latest';
-
-    if (!siteId || !token) {
-      return new Response(errorResponseScript('Missing required parameters: site ID and token.'), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/javascript; charset=utf-8', 'X-Flux-Error': 'Site ID and token are required' }
-      });
+    if (!siteId) {
+      throw new Error('Parameter "site" is required');
     }
-    console.log('flux-optimizer-script: Processing request for site:', siteId);
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('flux-optimizer-script: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set.');
-      return new Response(errorResponseScript('Server configuration error.'), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/javascript; charset=utf-8', 'X-Flux-Error': 'Server configuration error' }
-      });
-    }
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
-    const { data: siteData, error: siteError } = await supabaseAdmin
-      .from('sites')
-      .select('id, optimization_token')
-      .eq('id', siteId)
-      .single();
-
-    if (siteError) {
-      console.warn('flux-optimizer-script: Error fetching site data.', { siteId, dbErrorCode: siteError.code, dbErrorMessage: siteError.message });
-      const status = siteError.code === 'PGRST116' ? 404 : 500;
-      const clientMessage = siteError.code === 'PGRST116' ? 'Site not found.' : 'Error validating site.';
-      return new Response(errorResponseScript(clientMessage), {
-        status, headers: { ...corsHeaders, 'Content-Type': 'application/javascript; charset=utf-8', 'X-Flux-Error': clientMessage }
-      });
-    }
-    
-    if (!siteData) {
-        console.warn('flux-optimizer-script: Site not found (no data).', { siteId });
-        return new Response(errorResponseScript('Site not found.'), {
-            status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/javascript; charset=utf-8', 'X-Flux-Error': 'Site not found' }
-        });
-    }
-
-    if (siteData.optimization_token !== token) {
-      console.warn('flux-optimizer-script: Invalid optimization token.', { siteId });
-      return new Response(errorResponseScript('Invalid token.'), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/javascript; charset=utf-8', 'X-Flux-Error': 'Forbidden - Invalid token' }
-      });
-    }
-    console.log('flux-optimizer-script: Token validated for site:', siteId);
-
-    const configs = await getActiveOptimizations(siteId, supabaseAdmin);
-    const optimizedScript = generateOptimizedScript(configs, siteId);
+    console.log('Processing request for site:', siteId);
+    // Inicializar cliente Supabase
+    const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    // Buscar configurações ativas
+    const configs = await getActiveOptimizations(siteId, supabase);
+    // Gerar script otimizado
+    const optimizedScript = generateOptimizedScript(configs);
     const processingTime = Date.now() - startTime;
-
-    console.log('flux-optimizer-script: Script generated successfully.', { siteId, configsCount: configs.length, scriptLength: optimizedScript.length, processingTime });
-    
+    console.log('Script generated successfully:', {
+      siteId,
+      configsCount: configs.length,
+      scriptLength: optimizedScript.length,
+      processingTime
+    });
+    // Retornar script com headers apropriados
     return new Response(optimizedScript, {
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/javascript; charset=utf-8',
         'Cache-Control': 'public, max-age=3600',
         'X-Flux-Version': version,
-        'X-Flux-Configs-Applied': configs.length.toString(),
-        'X-Flux-Processing-Time-Ms': processingTime.toString()
-      },
-      status: 200
+        'X-Flux-Configs': configs.length.toString(),
+        'X-Flux-Processing-Time': processingTime.toString()
+      }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     const processingTime = Date.now() - startTime;
-    console.error('flux-optimizer-script: Script generation failed.', { error: error.message, stack: error.stack, processingTime });
-    return new Response(errorResponseScript(error.message || 'Internal server error during script generation.'), {
-      status: 500, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/javascript; charset=utf-8', 'X-Flux-Error': error.message }
+    console.error('Script generation failed:', {
+      error: error.message,
+      stack: error.stack,
+      processingTime
+    });
+    // Retornar script de erro
+    const errorScript = `// Flux Revenue - Error\n// ${error.message}\nconsole.error('Flux Revenue Error: ${error.message}');`;
+    return new Response(errorScript, {
+      status: 400,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/javascript; charset=utf-8',
+        'X-Flux-Error': error.message
+      }
     });
   }
 });

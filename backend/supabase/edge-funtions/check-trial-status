@@ -1,199 +1,126 @@
-// backend/supabase/edge-funtions/check-trial-status/index.ts
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-// CORS Headers
-const allowedOrigins = [
-  "https://fluxrevenue.com.br",
-  "https://app.fluxrevenue.com.br",
-  // Ex: 'http://localhost:3000', 'http://localhost:8000' 
-];
-
-function getCorsHeaders(requestHeaders: Headers) {
-  const requestOrigin = requestHeaders.get('origin') || "";
-  const effectiveOrigin = allowedOrigins.includes(requestOrigin) ? 
-    requestOrigin : 
-    (requestOrigin.startsWith('http://localhost:') ? requestOrigin : allowedOrigins[0]);
-
-  return {
-    "Access-Control-Allow-Origin": effectiveOrigin,
+Deno.serve(async (req)=>{
+  // CORS dinâmico seguro para produção
+  const allowedOrigins = [
+    "https://fluxrevenue.com.br",
+    "https://app.fluxrevenue.com.br"
+  ];
+  const origin = req.headers.get("origin") ?? "";
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": allowedOrigins.includes(origin) ? origin : allowedOrigins[0],
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS", 
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "86400"
   };
-}
-
-Deno.serve(async (req)=>{
-  const corsHeaders = getCorsHeaders(req.headers);
-
+  // Trata a requisição OPTIONS para CORS
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders, status: 200 });
+    return new Response("ok", {
+      headers: corsHeaders,
+      status: 200
+    });
   }
-
   try {
     console.log('1. Iniciando check-trial-status');
-    
+    // CORREÇÃO AQUI:
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.warn('check-trial-status: Auth header ausente ou mal formatado');
-      return new Response(JSON.stringify({ error: 'Token de autorização não fornecido.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401
-      });
+      throw new Error('Token de autorização não fornecido');
     }
-    
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
-
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('check-trial-status: Variáveis de ambiente SUPABASE_URL ou SUPABASE_ANON_KEY não definidas.');
-      return new Response(JSON.stringify({ error: 'Configuração do servidor incompleta.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      });
+    const token = authHeader.replace('Bearer ', '');
+    console.log('2. Token extraído');
+    // ✅ VALIDAÇÃO JWT MELHORADA
+    let userId;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const now = Math.floor(Date.now() / 1000);
+      if (payload.exp < now) {
+        throw new Error('Token expirado');
+      }
+      if (!payload.sub) {
+        throw new Error('Token inválido - sem subject');
+      }
+      userId = payload.sub;
+      console.log('Payload JWT:', payload);
+      console.log('3. Token validado manualmente, userId:', userId);
+    } catch (error) {
+      throw new Error(`Token inválido: ${error.message}`);
     }
-
-    const supabaseAnonClient = createClient(supabaseUrl, supabaseAnonKey,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: { user: authUser }, error: authErr } = await supabaseAnonClient.auth.getUser();
-
-    if (authErr || !authUser) {
-      console.error('check-trial-status: Erro de autenticação ou token inválido:', authErr);
-      return new Response(JSON.stringify({ error: `Autenticação falhou: ${authErr?.message || 'Token inválido.'}` }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401
-      });
-    }
-    const userId = authUser.id;
-    console.log('3. Token validado via Supabase, userId:', userId);
-
-    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!supabaseServiceRoleKey) {
-      console.error('check-trial-status: Variável de ambiente SUPABASE_SERVICE_ROLE_KEY não definida.');
-      return new Response(JSON.stringify({ error: 'Configuração crítica do servidor ausente.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      });
-    }
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
-    
+    // ✅ BUSCAR CLIENTE COM SERVICE_ROLE_KEY
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     console.log('4. Buscando cliente na tabela');
-    const { data: client, error: clientError } = await supabaseAdmin
-      .from('clients')
-      .select('id, email, company, plan, status, subscription_status, trial_start_date, trial_end_date, created_at')
-      .eq('id', userId)
-      .single();
-
+    const { data: client, error: clientError } = await supabaseAdmin.from('clients').select('*').eq('id', userId).single();
     if (clientError) {
-      if (clientError.code === 'PGRST116') { 
-        console.warn('check-trial-status: Cliente não encontrado para userId:', userId);
-        return new Response(JSON.stringify({ error: 'Registro de cliente não encontrado. Contate o suporte.' }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 404 
-        });
-      }
       console.error('5. Erro ao buscar cliente:', clientError);
-      throw new Error(`Erro ao buscar dados do cliente: ${clientError.message}`);
+      throw new Error(`Cliente não encontrado: ${clientError.message}`);
     }
-    
+    if (!client) {
+      throw new Error('Cliente não existe na tabela');
+    }
     console.log('6. Cliente encontrado:', client.email);
-    
-    let currentClientData = { ...client }; 
-
-    if (!currentClientData.trial_end_date && currentClientData.plan === 'trial') {
-      console.log('7. trial_end_date não existe para plano trial, definindo com base em created_at ou trial_start_date...');
-      const trialStart = currentClientData.trial_start_date ? 
-        new Date(currentClientData.trial_start_date) : 
-        new Date(currentClientData.created_at);
-      
+    // ✅ VERIFICAR E CORRIGIR TRIAL_END_DATE
+    if (!client.trial_end_date) {
+      console.log('7. trial_end_date não existe, criando...');
+      const trialStart = client.trial_start_date ? new Date(client.trial_start_date) : new Date(client.created_at);
       const trialEnd = new Date(trialStart);
-      trialEnd.setDate(trialStart.getDate() + 7); 
-      
-      const { error: updateError } = await supabaseAdmin
-        .from('clients')
-        .update({
-          trial_end_date: trialEnd.toISOString(),
-          trial_start_date: trialStart.toISOString() 
-        })
-        .eq('id', userId);
-
+      trialEnd.setDate(trialEnd.getDate() + 7);
+      const { error: updateError } = await supabaseAdmin.from('clients').update({
+        trial_end_date: trialEnd.toISOString(),
+        trial_start_date: trialStart.toISOString()
+      }).eq('id', userId);
       if (updateError) {
-        console.error('Erro ao atualizar datas do trial:', updateError);
+        console.error('Erro ao atualizar trial dates:', updateError);
       } else {
-        console.log('Datas do trial atualizadas/definidas para o cliente:', userId);
-        currentClientData.trial_end_date = trialEnd.toISOString();
-        currentClientData.trial_start_date = trialStart.toISOString();
+        client.trial_end_date = trialEnd.toISOString();
+        client.trial_start_date = trialStart.toISOString();
       }
     }
-    
+    // ✅ CALCULAR STATUS DO TRIAL COM MELHOR PRECISÃO
     const now = new Date();
-    const trialEnd = currentClientData.trial_end_date ? new Date(currentClientData.trial_end_date) : null;
-    let timeDiff = 0;
-    let daysRemaining = 0;
-
-    if (trialEnd) {
-        timeDiff = trialEnd.getTime() - now.getTime();
-        daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
-    }
-    
+    const trialEnd = new Date(client.trial_end_date);
+    const timeDiff = trialEnd.getTime() - now.getTime();
+    const daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
     console.log('8. Calculando status do trial');
-
-    let effectiveSubscriptionStatus = currentClientData.subscription_status || 
-                                     (currentClientData.plan === 'trial' ? 'trialing' : 'unknown');
-    
-    const isCurrentlyTrialPlan = currentClientData.plan === 'trial';
-    const isTrialSubscription = effectiveSubscriptionStatus === 'trialing';
-
-    const trialStatusResponse = {
-      plan: currentClientData.plan,
-      subscription_status: effectiveSubscriptionStatus,
-      trial_active: isCurrentlyTrialPlan && isTrialSubscription && trialEnd && now < trialEnd,
-      trial_expired: isCurrentlyTrialPlan && isTrialSubscription && trialEnd && now >= trialEnd,
-      days_remaining: trialEnd ? Math.max(0, daysRemaining) : 0, 
-      hours_remaining: trialEnd ? Math.max(0, Math.ceil(timeDiff / (1000 * 60 * 60))) : 0,
-      trial_end_date: currentClientData.trial_end_date,
-      trial_start_date: currentClientData.trial_start_date,
-      company: currentClientData.company,
+    const trialStatus = {
+      subscription_status: client.subscription_status || 'trial',
+      trial_active: (client.subscription_status === 'trial' || !client.subscription_status) && now < trialEnd,
+      trial_expired: (client.subscription_status === 'trial' || !client.subscription_status) && now >= trialEnd,
+      days_remaining: Math.max(0, daysRemaining),
+      hours_remaining: Math.max(0, Math.ceil(timeDiff / (1000 * 60 * 60))),
+      trial_end_date: client.trial_end_date,
+      trial_start_date: client.trial_start_date,
+      company: client.company,
       user_id: userId,
       checked_at: new Date().toISOString()
     };
-
-    if (trialStatusResponse.trial_expired && isTrialSubscription) {
-      console.log('9. Trial expirado, atualizando status para "expired_trial" e plano para "free"');
-      const { data: updatedClient, error: expireError } = await supabaseAdmin
-        .from('clients')
-        .update({ subscription_status: 'expired_trial', plan: 'free' })
-        .eq('id', userId)
-        .eq('subscription_status', 'trialing') 
-        .select()
-        .single();
-
-      if (!expireError && updatedClient) {
-        console.log('Status do cliente atualizado para expired_trial e plano para free.');
-        trialStatusResponse.subscription_status = updatedClient.subscription_status;
-        trialStatusResponse.plan = updatedClient.plan;
-      } else {
-        console.error('Erro ao atualizar status do trial para expirado:', expireError);
+    // ✅ ATUALIZAR STATUS SE TRIAL EXPIROU
+    if (trialStatus.trial_expired && (client.subscription_status === 'trial' || !client.subscription_status)) {
+      console.log('9. Atualizando status para expirado');
+      const { error: expireError } = await supabaseAdmin.from('clients').update({
+        subscription_status: 'expired'
+      }).eq('id', userId);
+      if (!expireError) {
+        trialStatus.subscription_status = 'expired';
       }
     }
-    
-    console.log('10. Retornando status:', JSON.stringify(trialStatusResponse, null, 2));
-    return new Response(JSON.stringify(trialStatusResponse), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200
+    console.log('10. Retornando status:', JSON.stringify(trialStatus, null, 2));
+    return new Response(JSON.stringify(trialStatus), {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Erro na função check-trial-status:', error);
-    const status = error.status || (error.message?.includes("Token") || error.message?.includes("Autenticação") ? 401 : error.message?.includes("não encontrado") ? 404 : 500);
     return new Response(JSON.stringify({
-      error: error.message || 'Erro interno do servidor.',
+      error: error.message,
       details: error.toString(),
       timestamp: new Date().toISOString()
     }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      },
+      status: 400
     });
   }
 });
