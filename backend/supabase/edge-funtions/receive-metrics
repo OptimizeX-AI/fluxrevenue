@@ -1,92 +1,155 @@
-// /supabase/functions/receive-metrics/index.ts
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-// O conteúdo do 'cors.ts' foi movido para cá
+// backend/supabase/edge-funtions/receive-metrics/index.ts
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// CORS Headers
 const allowedOrigins = [
   'https://fluxrevenue.com.br',
-  'https://app.fluxrevenue.com.br'
+  'https://app.fluxrevenue.com.br',
 ];
-const requestOrigin = req.headers.get('origin');
-const corsHeaders = {
-  'Access-Control-Allow-Origin': allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0],
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
-};
-Deno.serve(async (req1)=>{
-  // Trata a requisição OPTIONS para CORS
-  if (req1.method === 'OPTIONS') {
-    return new Response('ok', {
-      headers: corsHeaders
+
+function getCorsHeaders(requestHeaders: Headers) {
+  const requestOrigin = requestHeaders.get('origin') || "";
+  const effectiveOrigin = allowedOrigins.includes(requestOrigin) ? 
+    requestOrigin : 
+    (requestOrigin.startsWith('http://localhost:') ? requestOrigin : allowedOrigins[0]);
+  
+  return {
+    'Access-Control-Allow-Origin': effectiveOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-optimization-token',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+}
+
+interface MetricsPayload {
+  site_id: string;
+  optimization_token: string;
+  pageviews: number;
+  impressions?: number;
+  clicks?: number;    
+  revenue?: number;   
+  timestamp?: string; 
+}
+
+Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req.headers);
+
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders, status: 200 });
+  }
+
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed. Use POST.' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 405,
     });
   }
+
   try {
-    // 1. Inicializa o cliente do Supabase
-    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    // 2. Extrai os dados enviados
-    const metrics = await req1.json();
-    const { site_id, pageviews, impressions, clicks, revenue } = metrics;
-    // 3. Validação básica
-    if (!site_id || pageviews === undefined) {
-      return new Response(JSON.stringify({
-        error: 'Dados de métrica incompletos.'
-      }), {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        },
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('receive-metrics: Variáveis de ambiente Supabase não definidas.');
+      return new Response(JSON.stringify({ error: 'Configuração do servidor incompleta.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      });
+    }
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    const payload: MetricsPayload = await req.json();
+    const { 
+      site_id, 
+      optimization_token, 
+      pageviews, 
+      impressions = 0, 
+      clicks = 0, 
+      revenue = 0 
+    } = payload;
+    const receivedTimestamp = payload.timestamp || new Date().toISOString();
+
+    if (!site_id || typeof pageviews !== 'number' || !optimization_token) {
+      return new Response(JSON.stringify({ error: 'Dados de métrica incompletos. site_id, optimization_token e pageviews são obrigatórios.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400
       });
     }
-    // 4. Verifica se o site existe
-    const { data: siteData, error: siteError } = await supabaseAdmin.from('sites').select('id').eq('id', site_id).single();
-    if (siteError || !siteData) {
-      return new Response(JSON.stringify({
-        error: 'Site não encontrado.'
-      }), {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        },
-        status: 404
+    
+    console.log('receive-metrics: Recebido payload para site_id:', site_id);
+
+    const { data: siteData, error: siteError } = await supabaseAdmin
+      .from('sites')
+      .select('id, optimization_token, client_id')
+      .eq('id', site_id)
+      .single();
+
+    if (siteError) {
+      console.warn('receive-metrics: Erro ao buscar site ou site não encontrado.', { site_id, dbErrorCode: siteError.code, dbErrorMessage: siteError.message });
+      const status = siteError.code === 'PGRST116' ? 404 : 500;
+      const clientMessage = siteError.code === 'PGRST116' ? 'Site não encontrado.' : 'Erro ao validar site.';
+      return new Response(JSON.stringify({ error: clientMessage }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status
       });
     }
-    // 5. Calcula as métricas derivadas (CTR e RPM)
-    const ctr = impressions > 0 ? clicks / impressions * 100 : 0;
-    const rpm = pageviews > 0 ? revenue / pageviews * 1000 : 0;
-    // 6. Insere os novos dados na tabela 'metrics'
-    const { error: insertError } = await supabaseAdmin.from('metrics').insert({
-      site_id,
-      pageviews,
-      impressions,
-      clicks,
-      revenue,
-      ctr,
-      rpm
-    });
-    if (insertError) {
-      throw insertError;
+    
+    if (!siteData) { 
+        console.warn('receive-metrics: Site não encontrado (no data).', { site_id });
+        return new Response(JSON.stringify({ error: 'Site não encontrado.' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 404
+        });
     }
-    // 7. Retorna uma resposta de sucesso
+
+    if (siteData.optimization_token !== optimization_token) {
+      console.warn('receive-metrics: Token de otimização inválido para o site.', { site_id });
+      return new Response(JSON.stringify({ error: 'Token de otimização inválido.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 403
+      });
+    }
+    console.log('receive-metrics: Token validado para site_id:', site_id, "client_id:", siteData.client_id);
+
+    const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+    const rpm = pageviews > 0 ? (revenue / pageviews) * 1000 : 0;
+
+    const { error: insertError } = await supabaseAdmin
+      .from('metrics')
+      .insert({
+        site_id,
+        client_id: siteData.client_id, 
+        pageviews: Math.floor(pageviews),
+        impressions: Math.floor(impressions),
+        clicks: Math.floor(clicks),
+        revenue: parseFloat(revenue.toFixed(4)), 
+        ctr: parseFloat(ctr.toFixed(4)),
+        rpm: parseFloat(rpm.toFixed(2)),
+        timestamp: receivedTimestamp, 
+      });
+
+    if (insertError) {
+      console.error('receive-metrics: Erro ao inserir métricas:', insertError);
+      throw new Error(`Falha ao salvar métricas: ${insertError.message}`);
+    }
+
+    console.log('receive-metrics: Métricas salvas com sucesso para site_id:', site_id);
     return new Response(JSON.stringify({
       status: 'success',
-      rpm: rpm,
-      ctr: ctr
+      message: 'Métricas recebidas com sucesso.',
+      data_received: { site_id, pageviews, impressions, clicks, revenue },
+      calculated_rpm: rpm,
+      calculated_ctr: ctr
     }), {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json'
-      },
-      status: 200
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 201
     });
-  } catch (error) {
-    // Retorna uma resposta de erro genérica
-    return new Response(JSON.stringify({
-      error: error.message
-    }), {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json'
-      },
-      status: 400
+
+  } catch (error: any) {
+    console.error('receive-metrics: Erro geral na função:', error);
+    const status = (error instanceof SyntaxError && error.message.includes("JSON")) ? 400 : (error.status || 500);
+    return new Response(JSON.stringify({ error: error.message || 'Erro interno do servidor.' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status
     });
   }
 });
