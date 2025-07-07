@@ -293,6 +293,9 @@ interface FluxDataReturn extends FluxState {
   updateSite: (siteId: string, updates: Partial<Site>) => Promise<void>;
   clearCache: () => void;
   getCacheStats: () => { size: number; keys: string[] };
+  invokeAnalyzeAdSense: (payload: AnalyzeAdSensePayload) => Promise<AnalyzeAdSenseResponse>;
+  invokeFluxOptimizerEngine: (payload: InvokeFluxOptimizerEnginePayload) => Promise<InvokeFluxOptimizerEngineResponse>;
+  invokeGeneratePdfReport: (payload: GeneratePdfReportPayload) => Promise<GeneratePdfReportResponse>; // Preparação
 }
 
 // === MAIN HOOK ===
@@ -838,9 +841,98 @@ export function useFluxData(): FluxDataReturn {
     addSite,
     updateSite,
     clearCache,
-    getCacheStats
+    getCacheStats,
+    invokeAnalyzeAdSense,
+    invokeFluxOptimizerEngine,
+    invokeGeneratePdfReport
   };
 }
+
+// Implementação de invokeAnalyzeAdSense
+const invokeAnalyzeAdSense = useCallback(async (payload: AnalyzeAdSensePayload): Promise<AnalyzeAdSenseResponse> => {
+  if (!payload.client_id) { // Assumindo que client_id é o user_id autenticado
+    console.error('❌ invokeAnalyzeAdSense: client_id (user_id) is required in payload.');
+    return { success: false, message: 'User authentication error.' };
+  }
+
+  try {
+    console.log('🔄 Invoking analyze-adsense EF with payload:', payload);
+    const { data, error } = await supabase.functions.invoke<AnalyzeAdSenseResponse>('analyze-adsense', {
+      body: payload
+    });
+
+    if (error) {
+      console.error('❌ Error invoking analyze-adsense EF:', error);
+      throw error;
+    }
+    if (!data) {
+      console.error('❌ No data returned from analyze-adsense EF.');
+      throw new Error('No data returned from analyze-adsense function');
+    }
+
+    console.log('✅ analyze-adsense EF invocation successful:', data);
+    // O refreshData e invalidação de cache podem ser chamados aqui se a EF modificar dados que o useFluxData gerencia
+    // Ex: fluxCache.invalidate('analyses'); fluxCache.invalidate('user_data'); await refreshData();
+    return data;
+  } catch (error: any) {
+    console.error('❌ Critical error in invokeAnalyzeAdSense:', error);
+    return { success: false, message: error.message || 'Error processing CSV analysis' };
+  }
+}, []); // Adicionar dependências se refreshData ou fluxCache forem usados aqui.
+
+// Implementação de invokeFluxOptimizerEngine
+const invokeFluxOptimizerEngine = useCallback(async (payload: InvokeFluxOptimizerEnginePayload): Promise<InvokeFluxOptimizerEngineResponse> => {
+  if (!payload.user_id) {
+    console.error('❌ invokeFluxOptimizerEngine: user_id is required in payload.');
+    return { success: false, message: 'User authentication error.' };
+  }
+
+  try {
+    console.log('🔄 Invoking flux-optimizer-engine EF with payload:', payload);
+    const { data, error } = await supabase.functions.invoke<InvokeFluxOptimizerEngineResponse>('flux-optimizer-engine', {
+      body: payload
+    });
+
+    if (error) {
+      console.error('❌ Error invoking flux-optimizer-engine EF:', error);
+      throw error;
+    }
+    if (!data) {
+      console.error('❌ No data returned from flux-optimizer-engine EF.');
+      throw new Error('No data returned from flux-optimizer-engine function');
+    }
+
+    console.log('✅ flux-optimizer-engine EF invocation successful:', data);
+    // Invalidar caches e/ou chamar refreshData se necessário
+    return data;
+  } catch (error: any) {
+    console.error('❌ Critical error in invokeFluxOptimizerEngine:', error);
+    return { success: false, message: error.message || 'Error invoking Flux Optimizer Engine' };
+  }
+}, []); // Adicionar dependências
+
+// Implementação (placeholder) de invokeGeneratePdfReport
+const invokeGeneratePdfReport = useCallback(async (payload: GeneratePdfReportPayload): Promise<GeneratePdfReportResponse> => {
+  if (!payload.userId) {
+     console.error('❌ invokeGeneratePdfReport: userId is required in payload.');
+    return { success: false, message: 'User authentication error.' };
+  }
+  try {
+    console.log('🔄 Invoking generate-pdf-report EF with payload:', payload);
+    const { data, error } = await supabase.functions.invoke<GeneratePdfReportResponse>('generate-pdf-report', {
+      body: payload
+    });
+
+    if (error) throw error;
+    if (!data) throw new Error('No data returned from generate-pdf-report');
+
+    return data;
+  } catch (error: any) {
+    console.error('❌ Error invoking generate-pdf-report:', error.message);
+    return { success: false, message: error.message || 'Failed to generate PDF report' };
+  }
+}, []);
+
 
 // === SPECIALIZED HOOKS CORRIGIDOS ===
 export function useTrialStatus() {
