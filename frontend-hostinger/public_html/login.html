@@ -375,11 +375,11 @@ body {
         const maxAge = 100 * 365 * 24 * 60 * 60; // 100 anos
         const secure = window.location.protocol === 'https:';
         
-        // ✅ Salvar tokens individuais
-        document.cookie = `flux-access-token=${session.access_token}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
-        document.cookie = `flux-refresh-token=${session.refresh_token}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
+        // ✅ Salvar tokens individuais (PADRONIZADO)
+        document.cookie = `flux_access_token=${session.access_token}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
+        document.cookie = `flux_refresh_token=${session.refresh_token}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
         
-        // ✅ Salvar sessão completa
+        // ✅ Salvar sessão completa (PADRONIZADO)
         const sessionData = JSON.stringify({
           access_token: session.access_token,
           refresh_token: session.refresh_token,
@@ -387,9 +387,9 @@ body {
           user: session.user
         });
         
-        document.cookie = `sb-flux-auth-token=${encodeURIComponent(sessionData)}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
+        document.cookie = `sb-flux-session=${encodeURIComponent(sessionData)}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
         
-        console.log('✅ [Login] Cookies cross-domain salvos:', {
+        console.log('✅ [Login] Cookies cross-domain PADRONIZADOS salvos:', {
           user: session.user.email,
           domain: '.fluxrevenue.com.br'
         });

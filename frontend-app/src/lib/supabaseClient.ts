@@ -227,11 +227,11 @@ const createSupabaseClient = (): SupabaseClient<Database> => {
     auth: {
       persistSession: true,
       detectSessionInUrl: true,
-      storageKey: `sb-flux-${config.environment}`,
+      storageKey: `sb-flux-session`, // PADRONIZADO
       autoRefreshToken: true,
       flowType: 'pkce',
       debug: config.debug,
-      storage: createCustomStorage() // ✅ CORRETO: removido "..."
+      storage: createCustomStorage()
     },
     global: {
       headers: {
