@@ -86,9 +86,9 @@ export interface GenerateScriptPayload {
 }
 
 export interface GenerateScriptResponse {
-  script: string;
-  message?: string;
+  script?: string; // O script em si, opcional se houver erro
   success: boolean;
+  message?: string; // Mensagem de erro ou sucesso
 }
 
 // Novas interfaces para a chamada mais complexa a flux-optimizer-engine pelo Optimizer.tsx
