@@ -370,14 +370,13 @@ body {
     --------------------------------------------------*/
     function saveCrossDomainCookies(session) {
       try {
-        console.log('🍪 [Login] Salvando cookies cross-domain...');
+        console.log('🍪 [Login] Salvando cookie de sessão cross-domain...');
         
         const maxAge = 100 * 365 * 24 * 60 * 60; // 100 anos
         const secure = window.location.protocol === 'https:';
         
-        // ✅ Salvar tokens individuais (PADRONIZADO)
-        document.cookie = `flux_access_token=${session.access_token}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
-        document.cookie = `flux_refresh_token=${session.refresh_token}; Domain=.fluxrevenue.com.br; path=/; max-age=${maxAge}; SameSite=Lax; ${secure ? 'secure' : ''}`;
+        // Cookies individuais flux_access_token e flux_refresh_token removidos pois AuthCookieManager foi removido.
+        // A sessão completa é gerenciada pelo sb-flux-session.
         
         // ✅ Salvar sessão completa (PADRONIZADO)
         const sessionData = JSON.stringify({
