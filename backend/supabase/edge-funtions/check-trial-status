@@ -1,12 +1,11 @@
-// backend/supabase/edge-funtions/create-site/index.ts
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// backend/supabase/edge-funtions/check-trial-status/index.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // CORS Headers
 const allowedOrigins = [
-  'https://fluxrevenue.com.br',
-  'https://app.fluxrevenue.com.br',
-  // Adicionar localhost para desenvolvimento local, se necessário
-  // Ex: 'http://localhost:3000', 'http://localhost:8000' (para Supabase CLI local)
+  "https://fluxrevenue.com.br",
+  "https://app.fluxrevenue.com.br",
+  // Ex: 'http://localhost:3000', 'http://localhost:8000' 
 ];
 
 function getCorsHeaders(requestHeaders: Headers) {
@@ -16,48 +15,43 @@ function getCorsHeaders(requestHeaders: Headers) {
     (requestOrigin.startsWith('http://localhost:') ? requestOrigin : allowedOrigins[0]);
 
   return {
-    'Access-Control-Allow-Origin': effectiveOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Max-Age': '86400',
+    "Access-Control-Allow-Origin": effectiveOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS", 
+    "Access-Control-Max-Age": "86400"
   };
 }
 
-interface SiteCreatePayload {
-  url: string;
-  name?: string; 
-  monthly_pageviews: number;
-  current_rpm: number;
-}
-
-Deno.serve(async (req) => {
+Deno.serve(async (req)=>{
   const corsHeaders = getCorsHeaders(req.headers);
 
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders, status: 200 });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders, status: 200 });
   }
 
   try {
+    console.log('1. Iniciando check-trial-status');
+    
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.warn('create-site: Auth header ausente ou mal formatado');
-      return new Response(JSON.stringify({ error: 'Token de autorização não fornecido ou mal formatado.' }), {
+      console.warn('check-trial-status: Auth header ausente ou mal formatado');
+      return new Response(JSON.stringify({ error: 'Token de autorização não fornecido.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 401
       });
     }
-
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
     if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('create-site: Variáveis de ambiente SUPABASE_URL ou SUPABASE_ANON_KEY não definidas.');
+      console.error('check-trial-status: Variáveis de ambiente SUPABASE_URL ou SUPABASE_ANON_KEY não definidas.');
       return new Response(JSON.stringify({ error: 'Configuração do servidor incompleta.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500
       });
     }
-    
+
     const supabaseAnonClient = createClient(supabaseUrl, supabaseAnonKey,
       { global: { headers: { Authorization: authHeader } } }
     );
@@ -65,95 +59,139 @@ Deno.serve(async (req) => {
     const { data: { user: authUser }, error: authErr } = await supabaseAnonClient.auth.getUser();
 
     if (authErr || !authUser) {
-      console.error('create-site: Erro de autenticação ou token inválido:', authErr);
+      console.error('check-trial-status: Erro de autenticação ou token inválido:', authErr);
       return new Response(JSON.stringify({ error: `Autenticação falhou: ${authErr?.message || 'Token inválido.'}` }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 401
       });
     }
     const userId = authUser.id;
-    console.log('create-site: Usuário autenticado:', userId);
-
-    const payload: SiteCreatePayload = await req.json();
-    const { url, name, monthly_pageviews, current_rpm } = payload;
-
-    if (!url || typeof monthly_pageviews !== 'number' || typeof current_rpm !== 'number') {
-      return new Response(JSON.stringify({ error: 'URL, pageviews mensais e RPM atual são obrigatórios e devem ser dos tipos corretos.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400 
-      });
-    }
-    if (url.trim() === "" || monthly_pageviews <= 0 || current_rpm < 0) {
-        return new Response(JSON.stringify({ error: 'Valores inválidos para URL, pageviews ou RPM.' }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 400
-        });
-    }
-    
-    const optimization_token = `flux_${userId.substring(0, 8)}_${crypto.randomUUID().replace(/-/g, '')}`;
-    const target_rpm = current_rpm * 1.37;
+    console.log('3. Token validado via Supabase, userId:', userId);
 
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!supabaseServiceRoleKey) {
-      console.error('create-site: Variável de ambiente SUPABASE_SERVICE_ROLE_KEY não definida.');
+      console.error('check-trial-status: Variável de ambiente SUPABASE_SERVICE_ROLE_KEY não definida.');
       return new Response(JSON.stringify({ error: 'Configuração crítica do servidor ausente.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500
       });
     }
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-    const siteToInsert = {
-      client_id: userId,
-      url: url.trim(),
-      name: name?.trim() || url.trim(),
-      monthly_pageviews: Math.floor(monthly_pageviews),
-      current_rpm: current_rpm,
-      target_rpm: parseFloat(target_rpm.toFixed(2)),
-      optimization_token: optimization_token,
-      script_installed: false,
-      optimization_enabled: true,
-    };
-
-    console.log('create-site: Inserindo site:', siteToInsert);
-    const { data: newSite, error: insertError } = await supabaseAdmin
-      .from('sites')
-      .insert(siteToInsert)
-      .select() 
+    
+    console.log('4. Buscando cliente na tabela');
+    const { data: client, error: clientError } = await supabaseAdmin
+      .from('clients')
+      .select('id, email, company, plan, status, subscription_status, trial_start_date, trial_end_date, created_at')
+      .eq('id', userId)
       .single();
 
-    if (insertError) {
-      console.error('create-site: Erro ao inserir site no DB:', insertError);
-      if (insertError.code === '23505') { 
-        return new Response(JSON.stringify({ error: `Erro ao criar site: A URL '${url}' já pode estar registrada.` }), {
+    if (clientError) {
+      if (clientError.code === 'PGRST116') { 
+        console.warn('check-trial-status: Cliente não encontrado para userId:', userId);
+        return new Response(JSON.stringify({ error: 'Registro de cliente não encontrado. Contate o suporte.' }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 409 
+            status: 404 
         });
       }
-      return new Response(JSON.stringify({ error: `Erro ao criar site: ${insertError.message}` }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500 
-      });
+      console.error('5. Erro ao buscar cliente:', clientError);
+      throw new Error(`Erro ao buscar dados do cliente: ${clientError.message}`);
     }
-    if (!newSite) {
-        console.error('create-site: Nenhum dado retornado após inserção bem-sucedida.');
-        return new Response(JSON.stringify({ error: 'Falha ao criar o site, nenhum dado retornado.' }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 500
-        });
-    }
+    
+    console.log('6. Cliente encontrado:', client.email);
+    
+    let currentClientData = { ...client }; 
 
-    console.log('create-site: Site criado com sucesso:', newSite.id);
-    return new Response(JSON.stringify(newSite), {
+    if (!currentClientData.trial_end_date && currentClientData.plan === 'trial') {
+      console.log('7. trial_end_date não existe para plano trial, definindo com base em created_at ou trial_start_date...');
+      const trialStart = currentClientData.trial_start_date ? 
+        new Date(currentClientData.trial_start_date) : 
+        new Date(currentClientData.created_at);
+      
+      const trialEnd = new Date(trialStart);
+      trialEnd.setDate(trialStart.getDate() + 7); 
+      
+      const { error: updateError } = await supabaseAdmin
+        .from('clients')
+        .update({
+          trial_end_date: trialEnd.toISOString(),
+          trial_start_date: trialStart.toISOString() 
+        })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('Erro ao atualizar datas do trial:', updateError);
+      } else {
+        console.log('Datas do trial atualizadas/definidas para o cliente:', userId);
+        currentClientData.trial_end_date = trialEnd.toISOString();
+        currentClientData.trial_start_date = trialStart.toISOString();
+      }
+    }
+    
+    const now = new Date();
+    const trialEnd = currentClientData.trial_end_date ? new Date(currentClientData.trial_end_date) : null;
+    let timeDiff = 0;
+    let daysRemaining = 0;
+
+    if (trialEnd) {
+        timeDiff = trialEnd.getTime() - now.getTime();
+        daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    }
+    
+    console.log('8. Calculando status do trial');
+
+    let effectiveSubscriptionStatus = currentClientData.subscription_status || 
+                                     (currentClientData.plan === 'trial' ? 'trialing' : 'unknown');
+    
+    const isCurrentlyTrialPlan = currentClientData.plan === 'trial';
+    const isTrialSubscription = effectiveSubscriptionStatus === 'trialing';
+
+    const trialStatusResponse = {
+      plan: currentClientData.plan,
+      subscription_status: effectiveSubscriptionStatus,
+      trial_active: isCurrentlyTrialPlan && isTrialSubscription && trialEnd && now < trialEnd,
+      trial_expired: isCurrentlyTrialPlan && isTrialSubscription && trialEnd && now >= trialEnd,
+      days_remaining: trialEnd ? Math.max(0, daysRemaining) : 0, 
+      hours_remaining: trialEnd ? Math.max(0, Math.ceil(timeDiff / (1000 * 60 * 60))) : 0,
+      trial_end_date: currentClientData.trial_end_date,
+      trial_start_date: currentClientData.trial_start_date,
+      company: currentClientData.company,
+      user_id: userId,
+      checked_at: new Date().toISOString()
+    };
+
+    if (trialStatusResponse.trial_expired && isTrialSubscription) {
+      console.log('9. Trial expirado, atualizando status para "expired_trial" e plano para "free"');
+      const { data: updatedClient, error: expireError } = await supabaseAdmin
+        .from('clients')
+        .update({ subscription_status: 'expired_trial', plan: 'free' })
+        .eq('id', userId)
+        .eq('subscription_status', 'trialing') 
+        .select()
+        .single();
+
+      if (!expireError && updatedClient) {
+        console.log('Status do cliente atualizado para expired_trial e plano para free.');
+        trialStatusResponse.subscription_status = updatedClient.subscription_status;
+        trialStatusResponse.plan = updatedClient.plan;
+      } else {
+        console.error('Erro ao atualizar status do trial para expirado:', expireError);
+      }
+    }
+    
+    console.log('10. Retornando status:', JSON.stringify(trialStatusResponse, null, 2));
+    return new Response(JSON.stringify(trialStatusResponse), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 201 
+      status: 200
     });
 
   } catch (error: any) {
-    console.error('create-site: Erro geral na função:', error);
-    const status = (error instanceof SyntaxError && error.message.includes("JSON")) ? 400 : (error.status || 500);
-    const message = error.message || 'Erro interno do servidor.';
-    return new Response(JSON.stringify({ error: message, details: error.toString() }), {
+    console.error('Erro na função check-trial-status:', error);
+    const status = error.status || (error.message?.includes("Token") || error.message?.includes("Autenticação") ? 401 : error.message?.includes("não encontrado") ? 404 : 500);
+    return new Response(JSON.stringify({
+      error: error.message || 'Erro interno do servidor.',
+      details: error.toString(),
+      timestamp: new Date().toISOString()
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status
     });
