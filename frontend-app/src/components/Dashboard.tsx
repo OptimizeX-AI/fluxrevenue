@@ -21,8 +21,8 @@ interface DashboardMetrics {
 }
 
 interface TopOpportunity {
-  site_id: string;
-  site_url?: string;
+  site_id: string; 
+  site_url?: string; 
   revenue_potential: number;
   optimization_score: number;
   priority: 'high' | 'medium' | 'low';
@@ -84,8 +84,8 @@ const Dashboard: React.FC = () => {
     isLoading, // Usar a função isLoading do hook
     error, 
     refreshData, // Este é refreshDataAndActivity do hook
-    recentActivityFeed,
-    fetchRecentActivityFeed
+    recentActivityFeed, 
+    fetchRecentActivityFeed 
   } = useFluxData();
 
   // const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null); // Não usado diretamente
@@ -98,7 +98,7 @@ const Dashboard: React.FC = () => {
       fetchRecentActivityFeed();
     }
   }, [user?.id, fetchRecentActivityFeed]);
-
+  
   // A lógica de subscription real-time para recentActivity agora está dentro do useFluxData
   // e deve atualizar o estado recentActivityFeed do hook, que este componente consome.
 
@@ -119,18 +119,18 @@ const Dashboard: React.FC = () => {
     const activeOptimizations = sites.filter(site => 
       site.optimization_enabled && site.script_installed
     ).length;
-
+    
     const calculateMonthlyGrowthInternal = (analysesData: typeof analyses) => {
         if (!analysesData || analysesData.length < 1) return 0; // Ajustado para lidar com menos de 2 análises
         const now = new Date();
         const thisMonthAnalyses = analysesData.filter(a => { const date = new Date(a.created_at); return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear(); });
         const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const lastMonthAnalyses = analysesData.filter(a => { const date = new Date(a.created_at); return date.getMonth() === lastMonthDate.getMonth() && date.getFullYear() === lastMonthDate.getFullYear(); });
-
+        
         const thisMonthRevenue = thisMonthAnalyses.reduce((sum, a) => sum + (a.analysis_results?.total_revenue || a.total_revenue || 0), 0);
         const lastMonthRevenue = lastMonthAnalyses.reduce((sum, a) => sum + (a.analysis_results?.total_revenue || a.total_revenue || 0), 0);
-
-        if (lastMonthRevenue === 0) return thisMonthRevenue > 0 ? 100 : 0;
+        
+        if (lastMonthRevenue === 0) return thisMonthRevenue > 0 ? 100 : 0; 
         return parseFloat((((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100).toFixed(1));
     };
     const getWeeklyAnalysesInternal = (analysesData: typeof analyses) => {
@@ -162,14 +162,14 @@ const Dashboard: React.FC = () => {
       .sort((a, b) => (b.total_revenue || 0) - (a.total_revenue || 0))
       .slice(0, 3)
       .map(analysis => ({
-        site_id: analysis.site_id,
+        site_id: analysis.site_id, 
         site_url: analysis.site_url || sites?.find(s => s.id === analysis.site_id)?.url || 'N/A',
         revenue_potential: analysis.projected_revenue || analysis.total_revenue || 0, // Priorizar projected_revenue
         optimization_score: analysis.optimization_score || 0,
-        priority: (analysis.optimization_score || 0) < 50 ? 'high' as const :
+        priority: (analysis.optimization_score || 0) < 50 ? 'high' as const : 
                  (analysis.optimization_score || 0) < 70 ? 'medium' as const : 'low' as const,
-        actions: (analysis.opportunities && analysis.opportunities.length > 0) ?
-                 analysis.opportunities.slice(0,2).map((op: any) => op.title || 'Otimizar') :
+        actions: (analysis.opportunities && analysis.opportunities.length > 0) ? 
+                 analysis.opportunities.slice(0,2).map((op: any) => op.title || 'Otimizar') : 
                  ['Revisar Análise', 'Aplicar Otimizações Gerais']
       }));
     setTopOpportunities(opportunities);
@@ -180,7 +180,7 @@ const Dashboard: React.FC = () => {
 
   // Usar isLoading('global') ou isLoading() se for o loading geral do useFluxData
   // Ou isLoading('recentActivity') se tivéssemos essa granularidade no hook
-  if (isLoading('global') && !recentActivityFeed.length && !sites.length) {
+  if (isLoading('global') && !recentActivityFeed.length && !sites.length) { 
     return ( <DashboardContainer><Header><Title>Carregando Dashboard...</Title></Header><MetricsGrid>{[1,2,3,4].map(i => (<MetricsCard key={i} title="" value="" isLoading={true} />))}</MetricsGrid></DashboardContainer>);
   }
 
@@ -238,14 +238,14 @@ const Dashboard: React.FC = () => {
            <SectionTitle>🎯 Principais Oportunidades</SectionTitle>
            <ActivityList>
              {topOpportunities.map((opportunity) => (
-               <ActivityItem key={opportunity.site_id} status="success">
-                 <ActivityIcon status="success">
+               <ActivityItem key={opportunity.site_id} status="success"> 
+                 <ActivityIcon status="success"> 
                    {opportunity.priority === 'high' ? '🔥' : opportunity.priority === 'medium' ? '⚡' : '📈'}
                  </ActivityIcon>
                  <ActivityContent>
                    <ActivityTitle>{opportunity.site_url || opportunity.site_id}</ActivityTitle>
                    <ActivityDescription>
-                     Potencial de Receita: R$ {opportunity.revenue_potential.toFixed(2)} •
+                     Potencial de Receita: R$ {opportunity.revenue_potential.toFixed(2)} • 
                      Score Atual: {opportunity.optimization_score}%
                    </ActivityDescription>
                  </ActivityContent>
