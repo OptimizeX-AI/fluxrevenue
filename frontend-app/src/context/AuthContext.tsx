@@ -28,7 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authLoading, setAuthLoading] = useState(true);
   const [isAuthReady, setIsAuthReady] = useState(false);
   
-  const { userProfile: fluxUserProfile, isLoading: fluxDataLoading, updateUserProfile, clearFluxCache } = useFluxData();
+  const { userProfile: fluxUserProfile, isLoading: fluxDataLoading, updateUserProfile, clearFluxCache } = useFluxData(user?.id);
 
   const isMountedRef = useRef(true);
   const lastSessionTokenRef = useRef<string | null>(null);

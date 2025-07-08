@@ -1,8 +1,9 @@
 // src/hooks/useFluxData.ts - ENTERPRISE GRADE DATA MANAGEMENT CORRIGIDO E CENTRALIZADO
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useAuth } from '../context/AuthContext'; // Apenas para obter 'user' para 'userId'
+// import { useAuth } from '../context/AuthContext'; // Removido para evitar dependência circular
 import { supabase } from '../lib/supabaseClient';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import {
   Site,
   Analysis,
@@ -111,9 +112,9 @@ interface FluxDataReturn extends Omit<FluxState, 'loading'> {
   markAllNotificationsRead: () => Promise<void>;
 }
 
-export function useFluxData(): FluxDataReturn {
-  const { user } = useAuth(); // Apenas para obter userId e reagir a mudanças de usuário
-  const userId = useMemo(() => user?.id, [user]);
+export function useFluxData(externalUserId?: string): FluxDataReturn {
+  // const { user } = useAuth(); // Removido para evitar dependência circular
+  const userId = externalUserId; // Usar userId passado como parâmetro
 
   // Refs para controle interno
   const refreshInProgressRef = useRef<boolean>(false);
@@ -470,8 +471,8 @@ export function useFluxData(): FluxDataReturn {
 }
 
 // Hooks especializados
-export function useTrialStatus(): { data: TrialStatusData | null; loading: boolean; error: string | null; refreshTrialStatus: () => void } { 
-    const { userProfile, isLoading: isFluxDataLoading, refreshData } = useFluxData(); // Ajustado para usar isLoading
+export function useTrialStatus(userId?: string): { data: TrialStatusData | null; loading: boolean; error: string | null; refreshTrialStatus: () => void } { 
+    const { userProfile, isLoading: isFluxDataLoading, refreshData } = useFluxData(userId); // Ajustado para usar isLoading
     const [trialData, setTrialData] = useState<TrialStatusData | null>(null);
     const [isCalculating, setIsCalculating] = useState(false); // Loading local para cálculo
 
@@ -523,8 +524,8 @@ export function useTrialStatus(): { data: TrialStatusData | null; loading: boole
     };
 }
 
-export function useMetrics(siteId?: string): { data: MetricsData | null; loading: boolean; error: string | null; refreshMetrics: () => void } { 
-    const { metrics, isLoading: isFluxDataLoading, refreshData, sites } = useFluxData(); // Ajustado para usar isLoading
+export function useMetrics(siteId?: string, userId?: string): { data: MetricsData | null; loading: boolean; error: string | null; refreshMetrics: () => void } { 
+    const { metrics, isLoading: isFluxDataLoading, refreshData, sites } = useFluxData(userId); // Ajustado para usar isLoading
     
     // Se um siteId for fornecido, idealmente filtraríamos as métricas para esse site.
     // Atualmente, 'metrics' no estado global é apenas a última métrica geral.
@@ -558,8 +559,8 @@ export function useMetrics(siteId?: string): { data: MetricsData | null; loading
     };
 }
 
-export function useAnalyzeAdSense() { // Este hook parece ser mais um executor de EF do que um consumidor de dados do useFluxData
-  const { invokeAnalyzeAdSense, isLoading: isFluxDataLoading } = useFluxData(); 
+export function useAnalyzeAdSense(userId?: string) { // Este hook parece ser mais um executor de EF do que um consumidor de dados do useFluxData
+  const { invokeAnalyzeAdSense, isLoading: isFluxDataLoading } = useFluxData(userId); 
   const [data, setData] = useState<AnalyzeAdSenseResponse | null>(null); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -591,6 +592,49 @@ export function useAnalyzeAdSense() { // Este hook parece ser mais um executor d
   }, [invokeAnalyzeAdSense]);
 
   return { data, loading, error, analyzeCSV };
+}
+
+// Hook que pode ser usado nos componentes - obtém userId diretamente do Supabase
+export function useFluxDataWithAuth(): FluxDataReturn {
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let mounted = true;
+    
+    const getUserId = async () => {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (mounted && !error && user) {
+          setUserId(user.id);
+        } else if (mounted) {
+          setUserId(undefined);
+        }
+      } catch (err) {
+        console.warn('[useFluxDataWithAuth] Error getting user:', err);
+        if (mounted) setUserId(undefined);
+      }
+    };
+
+    getUserId();
+
+    // Listener para mudanças de auth
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (mounted) {
+        if (session?.user) {
+          setUserId(session.user.id);
+        } else {
+          setUserId(undefined);
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  return useFluxData(userId);
 }
 
 export default useFluxData;
