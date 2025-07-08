@@ -258,9 +258,15 @@ const Analyzer: React.FC = () => {
 
       const dataQualityVal: CSVValidation['dataQuality'] = qualityScore >= 80 ? 'excellent' : qualityScore >= 60 ? 'good' : qualityScore >= 40 ? 'fair' : 'poor';
       const errors: string[] = [];
+      const warnings: string[] = []; // Declarar o array de warnings
+
       if (!hasRequired) errors.push(`Colunas essenciais não encontradas no CSV: ${missingStandardHeaders.join(', ')}. Verifique o mapeamento e o arquivo.`);
       if (dataRowCount < 1) errors.push("Nenhuma linha de dados válida encontrada no CSV.");
+
+      // Adicionar ao array 'warnings' declarado
       if (!tempSummary.period_start || !tempSummary.period_end) warnings.push("Não foi possível determinar o período (data inicial/final) a partir do CSV.");
+      if (dataRowCount < 7 && dataRowCount > 0) warnings.push('Poucos dados para análise ideal (recomendado: 7+ dias).');
+
 
       const currentValidation: CSVValidation = {
         isValid: hasRequired && dataRowCount > 0 && !!tempSummary.period_start && !!tempSummary.period_end, // Adicionado cheque de data
@@ -271,8 +277,8 @@ const Analyzer: React.FC = () => {
         missingColumns: missingStandardHeaders,
         dataQuality: dataQualityVal,
         qualityScore,
-        errors,
-        warnings: warnings.concat(dataRowCount < 7 && dataRowCount > 0 ? ['Poucos dados para análise ideal (recomendado: 7+ dias).'] : []),
+        errors, // Usar o array 'errors'
+        warnings, // Usar o array 'warnings'
         preview: previewData
       };
       setValidation(currentValidation);
