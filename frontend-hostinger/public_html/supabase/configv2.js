@@ -1,9 +1,13 @@
-// public/supabase/configv2.js - LANDING PAGE VERSION
+// public/supabase/configv2.js - UNIVERSAL VERSION (Landing + App)
 
 (function() {
   'use strict';
 
-  console.log('🔄 [Flux Landing] Carregando configv2.js...');
+  // Detectar contexto automaticamente
+  const isApp = window.location.pathname.includes('/app/') || window.location.hostname.includes('app.');
+  const context = isApp ? 'app' : 'landing';
+  
+  console.log(`🔄 [Flux ${context}] Carregando configv2.js...`);
 
   const SUPABASE_CONFIG = {
     url: 'https://cykfgwzzvlnkqundyxrq.supabase.co',
@@ -34,24 +38,27 @@
     }
   };
 
-  // ✅ CRÍTICO: redirectToLogin específico para LANDING
+  // ✅ redirectToLogin adaptativo para landing/app
   let redirectInProgress = false;
   window.redirectToLogin = function(reason = 'auth_required') {
     if (redirectInProgress) {
-      console.log('🔄 [Flux Landing] Redirect já em andamento...');
+      console.log(`🔄 [Flux ${context}] Redirect já em andamento...`);
       return;
     }
     
     redirectInProgress = true;
-    console.log('🔄 [Flux Landing] redirectToLogin executada:', reason);
+    console.log(`🔄 [Flux ${context}] redirectToLogin executada:`, reason);
     
     if (window.fluxAuthTimer) {
       clearTimeout(window.fluxAuthTimer);
     }
     
-    // ✅ Landing apenas foca no formulário de login
     setTimeout(() => {
-      if (window.location.pathname !== '/login.html') {
+      if (isApp) {
+        // Se está no app, redirecionar para login
+        window.location.href = FLUX_CONFIG.app.loginUrl;
+      } else if (window.location.pathname !== '/login.html') {
+        // Se está na landing, redirecionar para login
         window.location.href = FLUX_CONFIG.app.loginUrl;
       } else {
         // Se já está na página de login, apenas focar no campo
@@ -63,31 +70,37 @@
     }, 100);
   };
 
-  // ✅ FUNÇÃO DE REDIRECIONAMENTO PÓS-LOGIN ESPECÍFICA
+  // ✅ FUNÇÃO DE REDIRECIONAMENTO PÓS-LOGIN ADAPTATIVA
   window.redirectToApp = function(delay = 500) {
-    console.log('🚀 [Flux Landing] Redirecionando para dashboard...');
+    console.log(`🚀 [Flux ${context}] Redirecionando para dashboard...`);
     setTimeout(() => {
-      window.location.href = FLUX_CONFIG.app.url;
+      if (!isApp) {
+        window.location.href = FLUX_CONFIG.app.url;
+      } else {
+        // Se já está no app, apenas recarregar para garantir estado limpo
+        window.location.reload();
+      }
     }, delay);
   };
 
-  // ✅ CONFIGURAÇÃO GLOBAL COM CONTEXTO
+  // ✅ CONFIGURAÇÃO GLOBAL ADAPTATIVA
   window.FluxConfig = { 
     supabase: SUPABASE_CONFIG, 
     flux: FLUX_CONFIG, 
     app: FLUX_CONFIG.app,
     redirectToLogin: window.redirectToLogin,
-    redirectToApp: window.redirectToApp, // ✅ Função específica da landing
+    redirectToApp: window.redirectToApp,
     initialized: true,
-    version: '2.0.1',
-    context: 'landing' // ✅ Identificador de contexto
+    version: '2.0.2',
+    context: context, // ✅ Contexto detectado dinamicamente
+    isApp: isApp
   };
   
-  console.log('✅ [Flux Landing] ConfigV2 carregado - versão', window.FluxConfig.version);
+  console.log(`✅ [Flux ${context}] ConfigV2 carregado - versão`, window.FluxConfig.version);
   
-  // ✅ Event específico para landing
-  window.dispatchEvent(new CustomEvent('flux-config-landing-ready', {
-    detail: { context: 'landing', version: '2.0.1' }
+  // ✅ Event adaptativo para contexto
+  window.dispatchEvent(new CustomEvent(`flux-config-${context}-ready`, {
+    detail: { context: context, version: '2.0.2', isApp: isApp }
   }));
 
 })();

@@ -1,15 +1,20 @@
-// public/supabase/flux-supabase.js - LANDING PAGE
+// public/supabase/flux-supabase.js - UNIVERSAL VERSION (Landing + App)
 
 (function() {
   'use strict';
+  
+  // Detectar contexto automaticamente
+  const isApp = window.location.pathname.includes('/app/') || window.location.hostname.includes('app.');
+  const context = isApp ? 'app' : 'landing';
+  
   // ✅ CRÍTICO: Prevenir múltiplas inicializações
-  if (window.fluxSupabaseLandingInitialized) {
-    console.log('🔄 [Flux Landing] flux-supabase já inicializado');
+  if (window.fluxSupabaseInitialized) {
+    console.log(`🔄 [Flux ${context}] flux-supabase já inicializado`);
     return;
   }
-  window.fluxSupabaseLandingInitialized = true;
+  window.fluxSupabaseInitialized = true;
 
-  console.log('🔄 [Flux Landing] Inicializando flux-supabase...');
+  console.log(`🔄 [Flux ${context}] Inicializando flux-supabase...`);
 
   function createCookieStorage() {
     return {
@@ -20,7 +25,7 @@
             .find(c => c.trim().startsWith(`${key}=`));
           return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
         } catch (error) {
-          console.error('❌ [Landing] Erro ao ler cookie:', key, error);
+          console.error(`❌ [${context}] Erro ao ler cookie:`, key, error);
           return null;
         }
       },
@@ -39,7 +44,7 @@
           
           document.cookie = cookieString;
         } catch (error) {
-          console.error('❌ [Landing] Erro ao salvar cookie:', key, error);
+          console.error(`❌ [${context}] Erro ao salvar cookie:`, key, error);
         }
       },
       
@@ -48,7 +53,7 @@
           const config = window.FluxConfig?.flux?.cookieOptions || {};
           document.cookie = `${key}=; Domain=${config.domain}; Path=${config.path}; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
         } catch (error) {
-          console.error('❌ [Landing] Erro ao remover cookie:', key, error);
+          console.error(`❌ [${context}] Erro ao remover cookie:`, key, error);
         }
       }
     };
@@ -56,7 +61,7 @@
 
   function initializeSupabase() {
     if (window.supabase && typeof window.supabase.auth?.signInWithPassword === 'function') {
-      console.log('✅ [Landing] Usando instância Supabase existente');
+      console.log(`✅ [${context}] Usando instância Supabase existente`);
       return;
     }
 
@@ -86,9 +91,9 @@
       });
 
       window.supabase = supabaseClient;
-      console.log('✅ [Landing] Supabase inicializado para landing page');
+      console.log(`✅ [${context}] Supabase inicializado com sucesso`);
 
-      // ✅ Função de login específica para landing
+      // ✅ Função de login adaptativa
       window.fluxLogin = async (email, password) => {
         try {
           const { data, error } = await supabaseClient.auth.signInWithPassword({
@@ -98,22 +103,31 @@
           
           if (error) throw error;
           
-          console.log('✅ [Landing] Login realizado, redirecionando...');
+          console.log(`✅ [${context}] Login realizado com sucesso`);
           
-          // ✅ Redirecionamento para app após login
-          setTimeout(() => {
-            window.location.href = 'https://app.fluxrevenue.com.br';
-          }, 500);
+          // ✅ Redirecionamento adaptativo
+          if (!isApp) {
+            console.log(`🚀 [${context}] Redirecionando para app...`);
+            setTimeout(() => {
+              window.location.href = 'https://app.fluxrevenue.com.br';
+            }, 500);
+          } else {
+            console.log(`✅ [${context}] Usuário logado no app`);
+            // Se já está no app, apenas emitir evento para atualizar estado
+            window.dispatchEvent(new CustomEvent('flux-auth-success', {
+              detail: { user: data.user, session: data.session }
+            }));
+          }
           
           return { success: true, data };
         } catch (error) {
-          console.error('❌ [Landing] Erro no login:', error);
+          console.error(`❌ [${context}] Erro no login:`, error);
           return { success: false, error };
         }
       };
 
     } catch (error) {
-      console.error('❌ [Landing] Erro inicialização:', error);
+      console.error(`❌ [${context}] Erro na inicialização:`, error);
     }
   }
 

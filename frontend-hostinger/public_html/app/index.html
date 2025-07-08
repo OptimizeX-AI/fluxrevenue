@@ -55,10 +55,10 @@
         .flux-status { margin: 16px 0; color: #6D6D70; font-size: 16px; }
     </style>
 
-    <!-- REMOVIDO: Inclusão dos scripts Supabase globais e do CDN -->
-    <!-- <script src="/supabase/configv2.js" ...></script> -->
-    <!-- <script src="https://unpkg.com/@supabase/supabase-js@2" ...></script> -->
-    <!-- <script src="/supabase/flux-supabase.js" ...></script> -->
+    <!-- ✅ CRÍTICO: Scripts Supabase necessários para autenticação -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/supabase/configv2.js"></script>
+    <script src="/supabase/flux-supabase.js"></script>
 
     <!-- CSS principal da aplicação React (gerado pelo build) -->
     <link href="/static/css/main.7c1a59a0.css" rel="stylesheet">
@@ -93,6 +93,243 @@
         </div>
     </div>
     
+    <!-- ✅ BRIDGE DE AUTENTICAÇÃO CROSS-DOMAIN -->
+    <script>
+        // ✅ Função para restaurar sessão do cookie cross-domain
+        window.FluxAuthBridge = {
+            restored: false,
+            
+            async restoreSessionFromCookie() {
+                try {
+                    console.log('🔍 [AuthBridge] Verificando cookie de sessão...');
+                    
+                    const cookie = document.cookie
+                        .split(';')
+                        .find(c => c.trim().startsWith('sb-flux-session='));
+                    
+                    if (!cookie) {
+                        console.log('🔍 [AuthBridge] Nenhum cookie de sessão encontrado');
+                        return null;
+                    }
+                    
+                    const sessionData = JSON.parse(decodeURIComponent(cookie.split('=')[1]));
+                    console.log('✅ [AuthBridge] Cookie de sessão encontrado:', {
+                        user: sessionData.user?.email,
+                        expires_at: sessionData.expires_at
+                    });
+                    
+                    // Aguardar Supabase estar disponível
+                    let attempts = 0;
+                    while (!window.supabase && attempts < 50) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        attempts++;
+                    }
+                    
+                    if (!window.supabase) {
+                        console.error('❌ [AuthBridge] Supabase não disponível após 5s');
+                        return null;
+                    }
+                    
+                    // Verificar se a sessão ainda é válida
+                    const now = Math.floor(Date.now() / 1000);
+                    if (sessionData.expires_at && sessionData.expires_at < now) {
+                        console.warn('⚠️ [AuthBridge] Sessão expirada, removendo cookie');
+                        this.clearSessionCookie();
+                        return null;
+                    }
+                    
+                    // Tentar restaurar a sessão no Supabase
+                    const { data: currentSession } = await window.supabase.auth.getSession();
+                    
+                    if (currentSession.session?.user?.id === sessionData.user?.id) {
+                        console.log('✅ [AuthBridge] Sessão já ativa no Supabase');
+                        this.restored = true;
+                        return currentSession.session;
+                    }
+                    
+                    // Restaurar sessão usando refresh token
+                    if (sessionData.refresh_token) {
+                        console.log('🔄 [AuthBridge] Restaurando sessão usando refresh token...');
+                        const { data, error } = await window.supabase.auth.setSession({
+                            access_token: sessionData.access_token,
+                            refresh_token: sessionData.refresh_token
+                        });
+                        
+                        if (error) {
+                            console.error('❌ [AuthBridge] Erro ao restaurar sessão:', error);
+                            this.clearSessionCookie();
+                            return null;
+                        }
+                        
+                        console.log('✅ [AuthBridge] Sessão restaurada com sucesso');
+                        this.restored = true;
+                        return data.session;
+                    }
+                    
+                    return null;
+                } catch (error) {
+                    console.error('❌ [AuthBridge] Erro ao restaurar sessão:', error);
+                    this.clearSessionCookie();
+                    return null;
+                }
+            },
+            
+            clearSessionCookie() {
+                try {
+                    const domain = '.fluxrevenue.com.br';
+                    document.cookie = `sb-flux-session=; Domain=${domain}; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+                    console.log('🧹 [AuthBridge] Cookie de sessão removido');
+                } catch (error) {
+                    console.error('❌ [AuthBridge] Erro ao remover cookie:', error);
+                }
+            },
+            
+            async init() {
+                if (this.restored) return;
+                
+                try {
+                    updateFluxStatus('Verificando autenticação...', 30);
+                    const session = await this.restoreSessionFromCookie();
+                    
+                    if (session) {
+                        console.log('✅ [AuthBridge] Usuário autenticado:', session.user.email);
+                        updateFluxStatus('Usuário autenticado - carregando dashboard...', 50);
+                    } else {
+                        console.log('🔍 [AuthBridge] Nenhuma sessão válida encontrada');
+                        updateFluxStatus('Carregando aplicação...', 40);
+                    }
+                } catch (error) {
+                    console.error('❌ [AuthBridge] Erro na inicialização:', error);
+                    updateFluxStatus('Erro de autenticação - continuando...', 35);
+                }
+            }
+        };
+        
+        // ✅ Executar bridge quando DOM estiver pronto
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                setTimeout(() => window.FluxAuthBridge.init(), 500);
+            });
+        } else {
+            setTimeout(() => window.FluxAuthBridge.init(), 500);
+        }
+    </script>
+
+    <!-- ✅ SISTEMA DE DEBUG PARA APP REACT -->
+    <script>
+        window.FluxDebug = {
+            errors: [],
+            logs: [],
+            
+            log(message, data = null) {
+                const timestamp = new Date().toISOString();
+                const logEntry = { timestamp, message, data, type: 'log' };
+                this.logs.push(logEntry);
+                console.log(`🔍 [FluxDebug] ${message}`, data || '');
+                
+                // Manter apenas últimos 100 logs
+                if (this.logs.length > 100) {
+                    this.logs = this.logs.slice(-100);
+                }
+            },
+            
+            error(message, error = null) {
+                const timestamp = new Date().toISOString();
+                const errorEntry = { timestamp, message, error: error?.toString(), type: 'error' };
+                this.errors.push(errorEntry);
+                console.error(`❌ [FluxDebug] ${message}`, error || '');
+                
+                // Manter apenas últimos 50 erros
+                if (this.errors.length > 50) {
+                    this.errors = this.errors.slice(-50);
+                }
+            },
+            
+            checkSupabaseStatus() {
+                const status = {
+                    globalSupabase: !!window.Supabase,
+                    supabaseInstance: !!window.supabase,
+                    supabaseAuth: !!window.supabase?.auth,
+                    supabaseAuthMethods: !!window.supabase?.auth?.signInWithPassword,
+                    fluxConfig: !!window.FluxConfig,
+                    fluxLogin: !!window.fluxLogin,
+                    fluxAuthBridge: !!window.FluxAuthBridge
+                };
+                
+                this.log('Status dos componentes Supabase:', status);
+                return status;
+            },
+            
+            checkReactStatus() {
+                const status = {
+                    React: !!window.React,
+                    ReactDOM: !!window.ReactDOM,
+                    reactRoot: !!document.getElementById('root'),
+                    reactMounted: document.getElementById('root')?.hasChildNodes() || false
+                };
+                
+                this.log('Status dos componentes React:', status);
+                return status;
+            },
+            
+            async testAuthentication() {
+                try {
+                    this.log('Testando autenticação...');
+                    
+                    if (!window.supabase) {
+                        throw new Error('Supabase não disponível');
+                    }
+                    
+                    const { data: session } = await window.supabase.auth.getSession();
+                    this.log('Sessão atual:', {
+                        hasUser: !!session.session?.user,
+                        userEmail: session.session?.user?.email,
+                        expiresAt: session.session?.expires_at
+                    });
+                    
+                    return session;
+                } catch (error) {
+                    this.error('Erro no teste de autenticação:', error);
+                    return null;
+                }
+            },
+            
+            getReport() {
+                return {
+                    timestamp: new Date().toISOString(),
+                    url: window.location.href,
+                    userAgent: navigator.userAgent,
+                    supabase: this.checkSupabaseStatus(),
+                    react: this.checkReactStatus(),
+                    errors: this.errors,
+                    logs: this.logs.slice(-20) // Últimos 20 logs
+                };
+            }
+        };
+        
+        // Capturar erros globais
+        window.addEventListener('error', (event) => {
+            window.FluxDebug.error('Erro global capturado:', {
+                message: event.message,
+                filename: event.filename,
+                lineno: event.lineno,
+                colno: event.colno,
+                error: event.error?.toString()
+            });
+        });
+        
+        // Capturar promises rejeitadas
+        window.addEventListener('unhandledrejection', (event) => {
+            window.FluxDebug.error('Promise rejeitada:', {
+                reason: event.reason?.toString(),
+                stack: event.reason?.stack
+            });
+        });
+        
+        // Debug inicial
+        window.FluxDebug.log('Sistema de debug inicializado');
+    </script>
+
     <!-- Script de inicialização e verificação de montagem do React (Mantido) -->
     <script>
         window.FluxState = {
@@ -127,7 +364,13 @@
                 const elapsed = Math.round((Date.now() - window.FluxState.startTime) / 1000);
                 timeEl.textContent = elapsed + 's';
             }
-            console.log(`[FluxLoader] ${message} (${progress >=0 ? progress + '%' : 'no progress'})`);
+            
+            // Integrar com sistema de debug
+            if (window.FluxDebug) {
+                window.FluxDebug.log(`Status: ${message} (${progress >= 0 ? progress + '%' : 'no progress'})`);
+            } else {
+                console.log(`[FluxLoader] ${message} (${progress >=0 ? progress + '%' : 'no progress'})`);
+            }
             
             const showEmergency = window.FluxState.isEmergencyMode || (Date.now() - window.FluxState.startTime > 15000);
             if (showEmergency && emergencyBtn && emergencyBtn.style.display === 'none') {
@@ -146,20 +389,48 @@
             
             // Verifica se o React substituiu o conteúdo do loader inicial
             if (root && (!loadingDiv || !root.contains(loadingDiv) || root.innerHTML.length > 1000 /* heurística */)) {
-                console.log('✅ [FluxLoader] React montado com sucesso aparente.');
+                if (window.FluxDebug) {
+                    window.FluxDebug.log('React montado com sucesso');
+                } else {
+                    console.log('✅ [FluxLoader] React montado com sucesso aparente.');
+                }
+                
                 window.FluxState.reactMounted = true;
                 updateFluxStatus('✅ Aplicação carregada!', 100);
+                
+                // Verificar status final dos componentes
+                setTimeout(() => {
+                    if (window.FluxDebug) {
+                        window.FluxDebug.checkSupabaseStatus();
+                        window.FluxDebug.checkReactStatus();
+                        window.FluxDebug.testAuthentication();
+                    }
+                }, 1000);
+                
                 if (loadingDiv) {
                     loadingDiv.classList.add('hidden');
                     setTimeout(() => { if (loadingDiv.parentNode) loadingDiv.parentNode.removeChild(loadingDiv); }, 500);
                 }
                 const loadTime = Date.now() - window.FluxState.startTime;
-                console.log(`🎉 Flux Revenue App carregado em ${loadTime}ms`);
+                
+                if (window.FluxDebug) {
+                    window.FluxDebug.log(`Flux Revenue App carregado em ${loadTime}ms`);
+                } else {
+                    console.log(`🎉 Flux Revenue App carregado em ${loadTime}ms`);
+                }
                 return;
             }
             
             if (window.FluxState.attempts >= window.FluxState.maxAttempts) {
-                console.warn('⚠️ [FluxLoader] Timeout de montagem do React. Removendo loader.');
+                if (window.FluxDebug) {
+                    window.FluxDebug.error('Timeout de montagem do React após múltiplas tentativas');
+                    // Gerar relatório de debug
+                    const report = window.FluxDebug.getReport();
+                    console.error('🚨 [FluxDebug] Relatório de timeout:', report);
+                } else {
+                    console.warn('⚠️ [FluxLoader] Timeout de montagem do React. Removendo loader.');
+                }
+                
                 updateFluxStatus('⚠️ Timeout - Forçando exibição...', 95);
                 if (loadingDiv) {
                     setTimeout(() => { loadingDiv.classList.add('hidden'); setTimeout(() => { if (loadingDiv.parentNode) loadingDiv.parentNode.removeChild(loadingDiv); }, 500); }, 1000);
@@ -173,12 +444,37 @@
         }
         
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('✅ [FluxLoader] DOM carregado.');
+            if (window.FluxDebug) {
+                window.FluxDebug.log('DOM carregado, iniciando aplicação');
+            } else {
+                console.log('✅ [FluxLoader] DOM carregado.');
+            }
+            
             updateFluxStatus('DOM pronto, carregando scripts...', 20);
+            
+            // Verificar componentes críticos após um delay
+            setTimeout(() => {
+                if (window.FluxDebug) {
+                    window.FluxDebug.checkSupabaseStatus();
+                }
+            }, 1500);
+            
             // Os scripts da app React são carregados com 'defer', então devem executar após o DOM.
             // A verificação de montagem do React começará após um pequeno delay.
             setTimeout(checkReactMounted, 1000); // Delay inicial antes de começar a checar
         });
+        
+        // ✅ Função global para debug manual
+        window.fluxDebugReport = () => {
+            if (window.FluxDebug) {
+                const report = window.FluxDebug.getReport();
+                console.log('📋 [FluxDebug] Relatório completo:', report);
+                return report;
+            } else {
+                console.warn('Sistema de debug não disponível');
+                return null;
+            }
+        };
 
         window.addEventListener('error', (event) => { /* ... (Mantido como antes) ... */ console.error('❌ Global error (index.html):', event.error); if (event.error?.message?.includes('Loading chunk') || event.error?.message?.includes('ChunkLoadError')) { updateFluxStatus('❌ Erro de carregamento de módulo - tentando recarregar...', 0); setTimeout(() => window.location.reload(), 3000); } });
         window.addEventListener('unhandledrejection', (event) => { /* ... (Mantido como antes) ... */ console.error('❌ Unhandled rejection (index.html):', event.reason); });
