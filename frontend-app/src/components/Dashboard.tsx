@@ -55,6 +55,20 @@ const SiteActions = styled.div`/* ... */`;
 const SiteButton = styled.button<any>`/* ... */`;
 const EmptyState = styled.div`/* ... */`;
 const EmptyIconStyled = styled.div`/* ... */`; // Renomeado
+
+const EmptyTitle = styled.h3`
+  font-size: 17px;
+  font-weight: 600;
+  color: #1D1D1F;
+  margin: 0 0 8px 0;
+`;
+
+const EmptyDescription = styled.p`
+  font-size: 15px;
+  color: #6D6D70;
+  margin: 0 0 24px 0;
+  line-height: 1.5;
+`;
 Header.defaultProps = { children: React.createElement(React.Fragment) }; Title.defaultProps = { children: React.createElement(React.Fragment) }; Subtitle.defaultProps = { children: React.createElement(React.Fragment) }; QuickActionsGrid.defaultProps = { children: React.createElement(React.Fragment) }; ActionButton.defaultProps = { children: React.createElement(React.Fragment) }; MetricsGrid.defaultProps = { children: React.createElement(React.Fragment) }; Section.defaultProps = { children: React.createElement(React.Fragment) }; SectionTitle.defaultProps = { children: React.createElement(React.Fragment) }; ActivityList.defaultProps = { children: React.createElement(React.Fragment) }; ActivityItem.defaultProps = { children: React.createElement(React.Fragment) }; ActivityIcon.defaultProps = { children: React.createElement(React.Fragment) }; ActivityContent.defaultProps = { children: React.createElement(React.Fragment) }; ActivityTitle.defaultProps = { children: React.createElement(React.Fragment) }; ActivityDescription.defaultProps = { children: React.createElement(React.Fragment) }; ActivityTimestamp.defaultProps = { children: React.createElement(React.Fragment) }; SiteCardStyled.defaultProps = { children: React.createElement(React.Fragment) }; SiteIcon.defaultProps = { children: React.createElement(React.Fragment) }; SiteInfo.defaultProps = { children: React.createElement(React.Fragment) }; SiteName.defaultProps = { children: React.createElement(React.Fragment) }; SiteStats.defaultProps = { children: React.createElement(React.Fragment) }; SiteActions.defaultProps = { children: React.createElement(React.Fragment) }; SiteButton.defaultProps = { children: React.createElement(React.Fragment) }; EmptyState.defaultProps = { children: React.createElement(React.Fragment) }; EmptyIconStyled.defaultProps = { children: React.createElement(React.Fragment) }; EmptyTitle.defaultProps = { children: React.createElement(React.Fragment) }; EmptyDescription.defaultProps = { children: React.createElement(React.Fragment) };
 
 
