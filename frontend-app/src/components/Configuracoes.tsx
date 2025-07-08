@@ -6,7 +6,7 @@ import styled, { keyframes, css } from 'styled-components';
 import { useFluxData } from '../hooks/usefluxdata';
 import { UserProfileData, UserSettings as UserPreferencesData, Site as GlobalSite } from '../types/interfaces'; // Usar os tipos corretos
 import { useToast } from '../hooks/use-toast';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 // import { supabase } from '../lib/supabaseClient'; // Removido, usaremos o hook
 
 // === INTERFACES LOCAIS (RateLimitInfo, PlanFeature, Plan, SiteConfig local) ===

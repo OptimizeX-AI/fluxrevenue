@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import { useFluxData } from '../hooks/usefluxdata';
 import { useToast } from '../hooks/use-toast';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient'; // Mantido para queries diretas e invoke da EF de PDF
 import MetricsCard from './MetricsCard';
 import {

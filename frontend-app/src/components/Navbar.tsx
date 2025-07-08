@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { useFluxData } from '../hooks/usefluxdata';
 import { supabase } from '../lib/supabaseClient';
 

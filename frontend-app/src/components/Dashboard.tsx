@@ -6,7 +6,7 @@ import styled from 'styled-components';
 import { useFluxData } from '../hooks/usefluxdata';
 import { RecentActivity } from '../types/interfaces'; // Importar RecentActivity do types
 import { useToast } from '../hooks/use-toast'; // Não usado, mas mantido se planejado para uso futuro
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import MetricsCard from './MetricsCard';
 import TrialBanner from './TrialBanner';
 // import { supabase } from '../lib/supabaseClient'; // Removido, fetchRecentActivity agora está no hook
@@ -217,8 +217,8 @@ const Dashboard: React.FC = () => {
           <SectionTitle>🕐 Atividade Recente</SectionTitle>
           <ActivityList>
             {recentActivityFeed.map((activity) => (
-              <ActivityItem key={activity.id} status={activity.status}>
-                <ActivityIcon status={activity.status}>
+              <ActivityItem key={activity.id} status={activity.status || 'default'}>
+                <ActivityIcon status={activity.status || 'default'}>
                   {activity.type === 'analysis' ? '📊' : activity.type === 'optimization' ? '⚡' : '➕'}
                 </ActivityIcon>
                 <ActivityContent>

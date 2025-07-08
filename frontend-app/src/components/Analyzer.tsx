@@ -8,7 +8,7 @@ import { useAnalyzeAdSense } from '../hooks/usefluxdata'; // Corrigido para useF
 import { AnalyzeAdSensePayload, AnalyzeAdSenseResponse } from '../types/interfaces';
 import { useToast } from '../hooks/use-toast';
 import MetricsCard from './MetricsCard';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 // === INTERFACES LOCAIS ===
 interface CSVRow {

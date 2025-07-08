@@ -1,7 +1,7 @@
 // src/components/guards/ProtectedRoute.tsx - ENTERPRISE GRADE
 import React, { useState, useEffect, useRef } from 'react';
 import styled, { keyframes, css } from 'styled-components';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../LoadingSpinner';
 
 interface ProtectedRouteProps {

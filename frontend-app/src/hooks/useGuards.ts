@@ -1,6 +1,6 @@
 // src/hooks/useGuards.ts - ENTERPRISE PERMISSION SYSTEM CORRIGIDO
 
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { useMemo } from 'react';
 
 type Permission = string;

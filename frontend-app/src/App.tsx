@@ -4,8 +4,8 @@ import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'; // Adicionado useLocation
 import { ErrorBoundary } from 'react-error-boundary';
 import styled from 'styled-components';
-import { AuthProvider } from './contexts/AuthContext';
-import { ConfigProvider } from './contexts/ConfigContext';
+import { AuthProvider } from './context/AuthContext';
+import { ConfigProvider } from './context/ConfigContext';
 import LoadingSpinner from './components/LoadingSpinner';
 import { Toaster } from './components/ui/toast';
 import Navbar from './components/Navbar';

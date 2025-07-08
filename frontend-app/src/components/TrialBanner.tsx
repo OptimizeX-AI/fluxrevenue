@@ -2,7 +2,7 @@
 import React, { memo, useMemo, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { useFluxData } from '../hooks/usefluxdata'; // ✅ Usar hook otimizado
 import { supabase } from '../lib/supabaseClient';
 
@@ -10,15 +10,15 @@ import { supabase } from '../lib/supabaseClient';
 interface ClientData {
   id: string;
   name: string;
-  email: string;
+  email?: string | null; // Permitir null/undefined
   plan: 'free' | 'trial' | 'basic' | 'pro' | 'enterprise';
   trial_end?: string;
   created_at: string;
-  subscription_status?: 'active' | 'canceled' | 'past_due' | 'trialing';
+  subscription_status?: 'active' | 'canceled' | 'past_due' | 'trialing' | 'expired_trial' | null; // Permitir null
   // ✅ Campos adicionais baseados na estrutura real
   monthly_limit?: number;
   analyses_used?: number;
-  next_billing_date?: string;
+  next_billing_date?: string | null; // Permitir null
 }
 
 interface TrialBannerProps {

@@ -1,7 +1,7 @@
 // src/hooks/useFluxData.ts - ENTERPRISE GRADE DATA MANAGEMENT CORRIGIDO E CENTRALIZADO
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useAuth } from '../contexts/AuthContext'; // Apenas para obter 'user' para 'userId'
+import { useAuth } from '../context/AuthContext'; // Apenas para obter 'user' para 'userId'
 import { supabase } from '../lib/supabaseClient';
 import {
   Site,
@@ -180,23 +180,23 @@ export function useFluxData(): FluxDataReturn {
       const cached = fluxCache.get<Pick<FluxState, 'sites' | 'analyses' | 'optimizationTasks' | 'metrics'>>(cacheKey);
       if (cached) { updateState(cached); setLoadingState('sitesAnalyses', false); return; }
 
-      const [sitesResult, analysesResult, notificationsResult, rateLimitsResult] = await Promise.allSettled([
+      const [sitesResult, analysesResult, notificationsResult] = await Promise.allSettled([
         supabase.from('sites').select('*').eq('client_id', currentUserId).order('created_at', { ascending: false }),
         supabase.from('adsense_analyses').select('*, sites(url)').eq('client_id', currentUserId).order('created_at', { ascending: false }).limit(50),
         supabase.from('notifications').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false }).limit(20),
-        supabase.from('rate_limits').select('*').eq('user_id', currentUserId),
       ]);
       const sites = extractSettledSupabaseData(sitesResult, [], false) as Site[];
       const analyses = extractSettledSupabaseData(analysesResult, [], false) as Analysis[];
       const notifications = extractSettledSupabaseData(notificationsResult, [], false) as Notification[];
-      const rateLimits = extractSettledSupabaseData(rateLimitsResult, [], false) as RateLimit[];
+      const rateLimits: RateLimit[] = []; // Rate limits não implementado ainda
 
       let optimizationTasks: OptimizationTask[] = [];
       if (sites.length > 0) { 
         try { 
           const siteIds = sites.map(s => s.id); 
           const tasksQuery = await supabase.from('optimization_tasks').select('id, created_at, status, site_id, results').in('site_id', siteIds).order('created_at', { ascending: false }).limit(20);
-          optimizationTasks = extractSupabaseData(tasksQuery, []) ?? []; // Garantir que seja array
+          const tasksResult = extractSupabaseData(tasksQuery, [], false);
+          optimizationTasks = Array.isArray(tasksResult) ? tasksResult as OptimizationTask[] : []; // Garantir que seja array
         } catch (e){ console.warn('Error fetching optimization_tasks:', e); optimizationTasks = []; } 
       }
       let metrics: MetricsData | null = null;
@@ -204,7 +204,11 @@ export function useFluxData(): FluxDataReturn {
         try { 
           const metricsQuery = await supabase.from('metrics').select('*').in('site_id', sites.map(s=>s.id)).order('timestamp', { ascending: false }).limit(1);
           const metricsData = extractSupabaseData(metricsQuery, []);
-          metrics = metricsData?.[0] ?? null; // Acesso seguro e fallback para null
+          if (Array.isArray(metricsData) && metricsData.length > 0) {
+            metrics = metricsData[0] as MetricsData;
+          } else {
+            metrics = null;
+          }
         } catch(e){ console.warn('Error fetching metrics:', e); metrics = null; } 
       }
       
@@ -216,7 +220,7 @@ export function useFluxData(): FluxDataReturn {
     finally { setLoadingState('sitesAnalyses', false); }
   }, [getCacheKey, updateState, setLoadingState]);
 
-  const fetchRecentActivityFeedInternal = useCallback(async (currentUserId: string, currentSites: Site[]): Promise<RecentActivity[]> => { /* ... (lógica como antes, mas recebe userId e sites) ... */ if (!currentUserId) return []; try { const { data: analysesData } = await supabase .from('adsense_analyses') .select('id, created_at, status, site_id, site_url, sites ( url )') .eq('client_id', currentUserId) .order('created_at', { ascending: false }) .limit(5); let tasksData: any[] = []; if (currentSites.length > 0) { const siteIdsFromState = currentSites.map(s => s.id); const {data} = await supabase .from('optimization_tasks') .select('id, created_at, status, site_id, sites ( url )') .in('site_id', siteIdsFromState) .order('created_at', { ascending: false }) .limit(3); tasksData = data || []; } const activities: RecentActivity[] = []; analysesData?.forEach((a: any) => activities.push({ id: a.id, type: 'analysis', title: `Análise ${a.sites?.url || a.site_url || a.site_id}`, description: `Status: ${a.status}`, timestamp: a.created_at, status: a.status as RecentActivity['status'], site_url: a.sites?.url || a.site_url, link: `/analyzer?analysis_id=${a.id}` })); tasksData?.forEach((t: any) => activities.push({ id: t.id, type: 'optimization', title: `Otimização ${t.sites?.url || t.site_id}`, description: `Status: ${t.status}`, timestamp: t.created_at, status: t.status as RecentActivity['status'], site_url: t.sites?.url, link: `/optimizer?task_id=${t.id}` })); activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()); return activities.slice(0, 8); } catch (error) { console.error('Error fetching recent activity feed:', error); return []; } }, [supabase]);
+  const fetchRecentActivityFeedInternal = useCallback(async (currentUserId: string, currentSites: Site[]): Promise<RecentActivity[]> => { /* ... (lógica como antes, mas recebe userId e sites) ... */ if (!currentUserId) return []; try { const { data: analysesData } = await supabase .from('adsense_analyses') .select('id, created_at, status, site_id, site_url, sites ( url )') .eq('client_id', currentUserId) .order('created_at', { ascending: false }) .limit(5); let tasksData: any[] = []; if (currentSites.length > 0) { const siteIdsFromState = currentSites.map(s => s.id); const {data} = await supabase .from('optimization_tasks') .select('id, created_at, status, site_id, sites ( url )') .in('site_id', siteIdsFromState) .order('created_at', { ascending: false }) .limit(3); tasksData = data || []; } const activities: RecentActivity[] = [];     analysesData?.forEach((a: any) => activities.push({ id: a.id, type: 'analysis', title: `Análise ${a.sites?.url || a.site_url || a.site_id}`, description: `Status: ${a.status}`, message: `Análise para site ${a.sites?.url || a.site_url || a.site_id} - Status: ${a.status}`, timestamp: a.created_at, status: a.status as RecentActivity['status'], site_url: a.sites?.url || a.site_url, link: `/analyzer?analysis_id=${a.id}` })); tasksData?.forEach((t: any) => activities.push({ id: t.id, type: 'optimization', title: `Otimização ${t.sites?.url || t.site_id}`, description: `Status: ${t.status}`, message: `Otimização para site ${t.sites?.url || t.site_id} - Status: ${t.status}`, timestamp: t.created_at, status: t.status as RecentActivity['status'], site_url: t.sites?.url, link: `/optimizer?task_id=${t.id}` })); activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()); return activities.slice(0, 8); } catch (error) { console.error('Error fetching recent activity feed:', error); return []; } }, [supabase]);
   const fetchRecentActivityFeed = useCallback(async () => { if(!userId) return; setLoadingState('recentActivity', true); try { const feed = await fetchRecentActivityFeedInternal(userId, state.sites); updateState({ recentActivityFeed: feed }); } catch(e:any){ setState(prev => ({...prev, error: e.message}));} finally { setLoadingState('recentActivity', false); } }, [userId, state.sites, fetchRecentActivityFeedInternal, updateState, setLoadingState]);
 
   const refreshData = useCallback(async (dataType: keyof FluxState | 'all' = 'all') => {
@@ -382,7 +386,39 @@ export function useFluxData(): FluxDataReturn {
     }
   }, [supabase, refreshData, setLoadingState]);
 
-  const updateSiteHandler = useCallback(async (siteId: string, updates: Partial<Site>): Promise<{success: boolean, error?: any, data?: Site | null}> => { const {user} = await getValidSessionOrThrow(); setLoadingState(`updateSite_${siteId}`, true); try { const {data, error} = await supabase.from('sites').update(updates).eq('id', siteId).eq('client_id', user.id).select().single(); if(error) throw error; await refreshData('sites'); return {success:true, data}; } catch(e:any){return {success:false, error:e};} finally {setLoadingState(`updateSite_${siteId}`, false);}}, [supabase, refreshData, setLoadingState]);
+  const updateSiteHandler = useCallback(async (siteId: string, updates: Partial<Site>): Promise<{success: boolean, error?: any, data?: Site | null}> => {
+    const {user} = await getValidSessionOrThrow();
+    setLoadingState(`updateSite_${siteId}`, true);
+    try {
+      const {data, error} = await supabase.from('sites').update(updates).eq('id', siteId).eq('client_id', user.id).select().single();
+      if(error) throw error;
+      await refreshData('sites');
+      // Transformar dados do DB para tipo Site esperado
+      const siteData: Site | null = data ? { 
+        id: data.id,
+        url: data.url,
+        client_id: data.client_id,
+        created_at: data.created_at || undefined,
+        updated_at: data.updated_at || undefined,
+        name: data.name || undefined,
+        monthly_pageviews: data.monthly_pageviews || undefined,
+        current_rpm: data.current_rpm || undefined,
+        target_rpm: data.target_rpm || undefined,
+        optimization_token: data.optimization_token || undefined,
+        content_niche: data.content_niche || undefined,
+        script_installed: data.script_installed || undefined,
+        optimization_enabled: data.optimization_enabled || undefined,
+        category: data.category || undefined,
+        adsense_id: data.adsense_id || undefined,
+        geographic_distribution: data.geographic_distribution || undefined
+      } : null;
+      return {success:true, data: siteData};
+    } catch(e:any){
+      return {success:false, error:e};
+    } finally {
+      setLoadingState(`updateSite_${siteId}`, false);
+    }
+  }, [supabase, refreshData, setLoadingState]);
 
   // Removido setupSubscriptionsCallback e refreshDataAndActivity das dependências do useEffect principal,
   // pois refreshData e setupSubscriptions já estão estáveis devido ao useCallback e userId.
