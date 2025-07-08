@@ -1,6 +1,20 @@
 // frontend-app/src/types/interfaces.ts
 
 // Interfaces de Dados do Domínio (ex: tabelas do DB)
+
+// Para representar atividades recentes (usado em Dashboard e potencialmente useFluxData)
+export interface RecentActivity {
+  id: string;
+  type: 'analysis_completed' | 'site_added' | 'optimization_applied' | 'metric_alert' | 'user_login' | 'report_generated';
+  timestamp: string;
+  message: string;
+  details?: any; // Pode conter site_id, analysis_id, etc.
+  user_id?: string; // Para filtrar por usuário se necessário
+  icon?: string; // Nome de um ícone para UI
+  link?: string; // Link para a página relevante
+}
+
+
 export interface Site {
   id: string;
   client_id: string;
@@ -40,10 +54,10 @@ export interface Analysis { // Para dados da tabela 'adsense_analyses'
   projected_increase?: number;
   status: 'completed' | 'processing' | 'failed';
   // Campos JSON ou mais detalhados
-  analysis_results?: any;
-  opportunities?: any[];
+  analysis_results?: any; 
+  opportunities?: any[]; 
   // Campos que estavam na interface local do Analyzer.tsx
-  file_name?: string;
+  file_name?: string; 
   period_start?: string;
   period_end?: string;
   // Outros campos da tabela adsense_analyses
@@ -131,12 +145,23 @@ export interface Notification { // Para dados da tabela 'notifications'
 
 export interface RateLimit { // Para dados da tabela 'rate_limits'
   id: string;
-  user_id: string;
+  user_id: string; 
   key: string;
   count: number;
   date: string; // YYYY-MM-DD
   operation: string; // Ex: 'analysis', 'script_generation'
   // created_at e updated_at são gerenciados pelo DB
+}
+
+// Para os passos de processamento exibidos no Optimizer.tsx
+export interface ProcessingStep {
+  id: string;
+  title: string;
+  description: string; // Adicionado, conforme erro TS
+  status: 'pending' | 'processing' | 'completed' | 'error';
+  progress: number; // 0-100
+  estimatedTime?: number; // em segundos
+  details?: string; // Informações adicionais ou logs
 }
 
 export interface OptimizationTask { // Para dados da tabela 'optimization_tasks'
@@ -162,17 +187,27 @@ export interface OptimizationTask { // Para dados da tabela 'optimization_tasks'
 // Para a Edge Function: create-site
 export interface CreateSitePayload {
   url: string;
-  name?: string;
+  name?: string; 
   monthly_pageviews: number;
   current_rpm: number;
 }
-export type CreateSiteResponse = Site & { success?: boolean; message?: string; }; // EF retorna o objeto Site
+// Ajustado para incluir um campo de erro mais estruturado
+export interface CreateSiteResponse {
+  success: boolean;
+  message?: string;
+  data?: Site | null; // Site criado ou null em caso de erro onde success=false
+  error?: {
+    message: string;
+    details?: any;
+    code?: string; // e.g., 'validation_error', 'db_error'
+  } | null;
+}
 
 // Para a Edge Function: analyze-adsense
 export interface AnalyzeAdSensePayload {
   // Dados que o frontend envia APÓS processar o CSV
-  site_id: string;
-  client_id: string;
+  site_id: string; 
+  client_id: string; 
   timestamp: string;
   file_name?: string;
   period_start?: string;
@@ -185,7 +220,7 @@ export interface AnalyzeAdSensePayload {
   avg_rpm: number;
   avg_cpc: number;
   // Informações de validação do CSV podem ser úteis para a EF
-  validation_info?: {
+  validation_info?: { 
     rowCount: number;
     columnCount: number;
     dataQuality: string;
@@ -197,17 +232,17 @@ export interface AnalyzeAdSensePayload {
 export interface AnalyzeAdSenseResponse {
   success: boolean;
   message?: string;
-  analysis_id?: string;
-  metrics?: { // Dados sumarizados reconfirmados ou calculados pela EF
-    total_revenue?: number;
-    total_pageviews?: number;
-    // ... outros campos de MetricsData
-  };
+  analysis_id?: string; 
+  metrics?: Partial<MetricsData & { // Usar Partial para tornar todos os campos opcionais
+    avg_cpc?: number; // Adicionar avg_cpc que não está em MetricsData
+    // total_impressions, total_clicks, avg_ctr, avg_rpm já estão em MetricsData
+    // total_revenue, total_pageviews já estão em MetricsData
+  }>;
   optimization_score?: number;
   projected_revenue?: number;
   projected_increase?: number;
-  analysis_results?: any;
-  opportunities?: any[];
+  analysis_results?: any; 
+  opportunities?: any[]; 
   from_cache?: boolean; // Adicionado para indicar se veio do cache da EF
   cache_age_hours?: number; // Adicionado
   benchmark_used?: any; // Adicionado
@@ -218,21 +253,21 @@ export interface AnalyzeAdSenseResponse {
 // Para a Edge Function: flux-optimizer-script (GET request)
 // Nenhum payload de corpo, params via URL. Resposta é string.
 export interface GenerateScriptResponse { // O hook constrói este objeto
-  script?: string;
+  script?: string; 
   success: boolean;
-  message?: string;
+  message?: string; 
 }
 
 // Para a Edge Function: flux-optimizer-engine (POST com otimizações selecionadas)
-export interface SelectedOptimizationConfig {
-  type: string;
+export interface SelectedOptimizationConfig { 
+  type: string; 
   title: string;
-  settings?: any;
+  settings?: any; 
   estimated_impact?: number;
   implementation_time?: number;
 }
 
-export interface SiteAnalysisDataForOptimizer {
+export interface SiteAnalysisDataForOptimizer { 
   optimization_score?: number;
   total_revenue?: number;
   avg_rpm?: number;
@@ -241,21 +276,40 @@ export interface SiteAnalysisDataForOptimizer {
 export interface InvokeFluxOptimizerEnginePayload {
   site_id: string;
   user_id: string; // ID do usuário autenticado (para validação na EF)
-  optimizations: SelectedOptimizationConfig[];
-  analysis_data?: SiteAnalysisDataForOptimizer | null;
+  optimizations: SelectedOptimizationConfig[]; 
+  analysis_data?: SiteAnalysisDataForOptimizer | null; 
   // taskId é opcional; se não fornecido, EF cria uma nova task
   // Se fornecido, EF pode tentar reprocessar/atualizar uma task existente.
-  taskId?: string;
+  taskId?: string; 
   // Adicionar outros campos que o Optimizer.tsx envia
   // site_url?: string; // Opcional, EF pode buscar se necessário
   timestamp?: string; // Gerado pela EF ou pelo hook
 }
 
+// Interface para os dados de configuração de otimização como exibidos/manipulados na UI (Optimizer.tsx)
+// Diferente de SelectedOptimizationConfig que é mais para o payload da EF.
+export interface OptimizationConfigDisplay {
+  id: string; // e.g., 'auto_ads'
+  type: string; // e.g., 'auto_ads'
+  title: string;
+  description: string;
+  category: 'revenue' | 'performance' | 'ux' | string; // string para flexibilidade
+  difficulty: 'easy' | 'medium' | 'hard' | string;
+  estimated_impact: number; // Em porcentagem, e.g., 25 para 25%
+  implementation_time: number; // Em minutos
+  enabled: boolean; // Se o usuário selecionou esta otimização
+  priority: number;
+  requirements: string[];
+  warnings: string[];
+  settings?: any; // Configurações específicas para esta otimização, se houver
+}
+
+
 export interface InvokeFluxOptimizerEngineResponse {
   success: boolean;
   message?: string;
-  script?: string;
-  instructions?: string[];
+  script?: string; 
+  instructions?: string[]; 
   task_id?: string; // ID da tarefa processada ou criada
   config_id?: string; // ID da optimizer_config criada
 }
@@ -266,9 +320,9 @@ export interface ReceiveMetricsPayload {
     optimization_token: string;
     pageviews: number;
     impressions?: number;
-    clicks?: number;
-    revenue?: number;
-    timestamp?: string;
+    clicks?: number;    
+    revenue?: number;   
+    timestamp?: string; 
     custom_data?: Record<string, any>;
 }
 export interface ReceiveMetricsResponse {
@@ -280,8 +334,8 @@ export interface ReceiveMetricsResponse {
     calculated_ctr?: number;
 }
 
-// Para a Edge Function: generate-pdf-report
-export interface ReportFiltersForPdf {
+// Para a Edge Function: generate-pdf-report 
+export interface ReportFiltersForPdf { 
   dateRange: 'last_7_days' | 'last_30_days' | 'last_90_days' | 'custom' | 'today' | 'yesterday';
   startDate?: string;
   endDate?: string;
@@ -291,7 +345,7 @@ export interface ReportFiltersForPdf {
   comparison: boolean;
 }
 
-export interface AnalyticsDataForPdf {
+export interface AnalyticsDataForPdf { 
   id: string; site_id: string; site_url: string; date: string;
   pageviews: number; revenue: number; rpm: number; ctr: number;
   impressions: number; clicks: number; optimization_score?: number;
@@ -299,7 +353,7 @@ export interface AnalyticsDataForPdf {
   niches_detected?: string[]; seasonality_factor?: number;
 }
 
-export interface ReportSummaryForPdf {
+export interface ReportSummaryForPdf { 
   totalRevenue: number; totalPageviews: number; averageRpm: number; averageCtr: number;
   totalClicks: number; totalImpressions: number; averageOptimizationScore: number;
   periodComparison: { revenueChange: number; pageviewsChange: number; rpmChange: number; ctrChange: number; optimizationChange: number; };
@@ -308,7 +362,7 @@ export interface ReportSummaryForPdf {
   recommendations: Array<{ type: 'revenue' | 'performance' | 'optimization'; title: string; description: string; impact: 'high' | 'medium' | 'low'; action: string; }>;
 }
 
-export interface ChartDataPointForPdf {
+export interface ChartDataPointForPdf { 
   date: string; value: number; comparison?: number; label?: string;
 }
 export interface GeneratePdfReportPayload {
@@ -316,14 +370,14 @@ export interface GeneratePdfReportPayload {
   reportSummary: ReportSummaryForPdf | null;
   chartData: ChartDataPointForPdf[];
   filters: ReportFiltersForPdf;
-  userId: string;
-  generatedAt: string;
+  userId: string; 
+  generatedAt: string; 
 }
 
 export interface GeneratePdfReportResponse {
   success: boolean;
   message?: string;
-  url?: string;
+  url?: string; 
 }
 
 // Outras interfaces que podem ser úteis
