@@ -12,7 +12,7 @@ interface ClientData {
   name: string;
   email: string;
   plan: 'free' | 'trial' | 'basic' | 'pro' | 'enterprise';
-  trial_end?: string;
+  trial_end_date?: string;
   created_at: string;
   subscription_status?: 'active' | 'canceled' | 'past_due' | 'trialing';
   // ✅ Campos adicionais baseados na estrutura real
@@ -477,7 +477,7 @@ const TrialBanner: React.FC<TrialBannerProps> = memo(({
             email: user.email,
             name: user.email?.split('@')[0] || 'Usuario',
             plan: 'trial',
-            trial_end: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            trial_end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             created_at: new Date().toISOString(),
             subscription_status: 'trialing'
           }, { 
@@ -589,8 +589,8 @@ const TrialBanner: React.FC<TrialBannerProps> = memo(({
     }
 
     // Se tem trial_end, calcular dias restantes
-    if (clientData.trial_end) {
-      const trialEndDate = new Date(clientData.trial_end);
+    if (clientData.trial_end_date) {
+      const trialEndDate = new Date(clientData.trial_end_date);
       const now = new Date();
       const diffTime = trialEndDate.getTime() - now.getTime();
       const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));

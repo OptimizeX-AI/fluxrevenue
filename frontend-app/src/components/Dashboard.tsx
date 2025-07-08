@@ -218,7 +218,7 @@ const Dashboard: React.FC = () => {
             {recentActivityFeed.map((activity) => (
               <ActivityItem key={activity.id} status={activity.status}>
                 <ActivityIcon status={activity.status}>
-                  {activity.type === 'analysis' ? '📊' : activity.type === 'optimization' ? '⚡' : '➕'}
+                  {activity.type === 'analysis_completed' ? '📊' : activity.type === 'optimization_applied' ? '⚡' : '➕'}
                 </ActivityIcon>
                 <ActivityContent>
                   <ActivityTitle>{activity.title}</ActivityTitle>

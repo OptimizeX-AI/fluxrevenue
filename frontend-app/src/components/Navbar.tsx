@@ -709,8 +709,8 @@ const Navbar: React.FC = () => {
       const client = clientResult.value.data;          
           // Calculate trial days left
           let trialDaysLeft: number | undefined; // ✅ Tipagem explícita
-if (client.trial_end) {
-  const trialEnd = new Date(client.trial_end);
+if (client.trial_end_date) {
+  const trialEnd = new Date(client.trial_end_date);
   const now = new Date();
   const diffTime = trialEnd.getTime() - now.getTime();
   trialDaysLeft = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
