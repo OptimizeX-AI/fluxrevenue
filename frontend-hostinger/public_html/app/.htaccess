@@ -26,6 +26,8 @@
         Header set Pragma "no-cache"
         Header set Expires "0"
     </FilesMatch>
+    
+
 </IfModule>
 
 # ✅ HEADERS DE SEGURANÇA ENTERPRISE
@@ -56,6 +58,8 @@
     <FilesMatch "\.js$">
         Header always set Content-Type "application/javascript; charset=utf-8"
     </FilesMatch>
+    
+
     
     <FilesMatch "\.css$">
         Header always set Content-Type "text/css; charset=utf-8"
@@ -111,6 +115,8 @@
     RewriteCond %{REQUEST_URI} \.css$ [NC]
     RewriteRule .* - [E=css_file:1]
     
+
+    
     # ✅ CRÍTICO: Service Worker deve retornar 404 se não existir
     RewriteCond %{REQUEST_URI} ^/(sw|service-worker|workbox-sw)\.js$ [NC]
     RewriteCond %{REQUEST_FILENAME} !-f
@@ -119,11 +125,6 @@
     # ✅ Assets estáticos prioritários (mantido)
     RewriteCond %{REQUEST_URI} ^/(manifest\.json|favicon\.ico|logo192\.png|logo512\.png|robots\.txt|sitemap\.xml)$ [NC]
     RewriteRule ^ - [L]
-    
-    # ✅ CRÍTICO: Pasta supabase COM headers corretos
-    RewriteCond %{REQUEST_URI} ^/supabase/ [NC]
-    RewriteCond %{REQUEST_FILENAME} -f
-    RewriteRule ^supabase/.*\.js$ - [E=supabase_js:1,L]
     
     # ✅ Pasta static (React build assets) - mantido
     RewriteCond %{REQUEST_URI} ^/static/ [NC]
@@ -159,6 +160,8 @@
     <FilesMatch "^(sw|service-worker|workbox-sw)\.js$">
         ExpiresDefault "access plus 0 seconds"
     </FilesMatch>
+    
+
     
     # ✅ Imagens - cache médio
     ExpiresByType image/png "access plus 6 months"
