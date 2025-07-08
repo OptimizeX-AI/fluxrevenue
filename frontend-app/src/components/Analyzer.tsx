@@ -318,7 +318,7 @@ const Analyzer: React.FC = () => {
       const payloadForEF: AnalyzeAdSensePayload = {
         ...parsedCsvSummary,
         site_id: selectedSiteId,
-        site_url: selectedSite?.url,
+        // site_url: selectedSite?.url, // Removido - EF busca internamente via site_id
         client_id: user.id,
         validation_info: {
             rowCount: validation.rowCount,
