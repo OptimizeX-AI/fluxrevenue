@@ -1,7 +1,8 @@
 // src/lib/supabaseClient.ts - ENTERPRISE GRADE CLIENT CORRIGIDO E REFAVORADO
 
-import { createBrowserClient, type SupabaseClient } from '@supabase/ssr';
-import type { Database } from '../types/database'; // Presume que este tipo existe e está correto
+import { createBrowserClient } from '@supabase/ssr';
+import type { Database } from '../types/database'; // Agora este arquivo existe
+import type { SupabaseClient } from '@supabase/supabase-js'; // Tipo principal
 
 // === TIPOS ENTERPRISE ===
 interface FluxSupabaseConfig {
@@ -45,8 +46,8 @@ const getConfig = (): FluxSupabaseConfig => {
   // A lógica para staging pode precisar ser ajustada se não houver uma variável de ambiente específica para isso.
   // Por enquanto, vamos assumir que qualquer coisa que não seja 'development' é 'production' para o cookieDomain.
   const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-  const isStaging = hostname.includes('staging') || hostname.includes('dev');
-
+  const isStaging = hostname.includes('staging') || hostname.includes('dev'); 
+  
   let environment: 'development' | 'staging' | 'production';
   if (isDevelopment) {
     environment = 'development';
@@ -69,7 +70,7 @@ const getConfig = (): FluxSupabaseConfig => {
 
 // === STORAGE CUSTOMIZADO CROSS-DOMAIN (Mantido como estava, mas usará config atualizada) ===
 const createCustomStorage = (): CustomStorage => {
-  const config = getConfig();
+  const config = getConfig(); 
   
   return {
     getItem: (key: string): string | null => {
@@ -93,7 +94,7 @@ const createCustomStorage = (): CustomStorage => {
             localStorage.setItem(key, value);
         }
         if (typeof document !== 'undefined') {
-            const maxAge = 365 * 24 * 60 * 60;
+            const maxAge = 365 * 24 * 60 * 60; 
             const secure = typeof window !== 'undefined' && window.location.protocol === 'https:';
             const domain = config.cookieDomain;
             document.cookie = `${key}=${encodeURIComponent(value)}; Domain=${domain}; Path=/; Max-Age=${maxAge}; SameSite=Lax; ${secure ? 'Secure' : ''}`;
@@ -138,13 +139,13 @@ const createSupabaseClientOnce = (): SupabaseClient<Database> => {
     return supabaseInstance;
   }
 
-  const config = getConfig();
+  const config = getConfig(); 
   const capabilities = checkBrowserCapabilities();
   
   if (config.debug) {
     console.log('🔧 Inicializando Supabase Client:', {
       environment: config.environment,
-      urlUsed: config.url,
+      urlUsed: config.url, 
       anonKeyUsed: config.anonKey ? `${config.anonKey.substring(0, 10)}...` : 'N/A', // Logar apenas parte da chave
       capabilities,
       cookieDomain: config.cookieDomain
@@ -154,8 +155,8 @@ const createSupabaseClientOnce = (): SupabaseClient<Database> => {
   const client = createBrowserClient<Database>(config.url, config.anonKey, {
     auth: {
       persistSession: true,
-      detectSessionInUrl: true,
-      storageKey: `sb-flux-session`,
+      detectSessionInUrl: true, 
+      storageKey: `sb-flux-session`, 
       autoRefreshToken: true,
       flowType: 'pkce',
       debug: config.debug,
