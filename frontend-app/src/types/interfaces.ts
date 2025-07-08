@@ -5,13 +5,18 @@
 // Para representar atividades recentes (usado em Dashboard e potencialmente useFluxData)
 export interface RecentActivity {
   id: string;
-  type: 'analysis_completed' | 'site_added' | 'optimization_applied' | 'metric_alert' | 'user_login' | 'report_generated';
+  type: 'analysis_completed' | 'site_added' | 'optimization_applied' | 'metric_alert' | 'user_login' | 'report_generated' | 'analysis' | 'optimization';
   timestamp: string;
   message: string;
   details?: any; // Pode conter site_id, analysis_id, etc.
   user_id?: string; // Para filtrar por usuário se necessário
   icon?: string; // Nome de um ícone para UI
   link?: string; // Link para a página relevante
+  // Adicionando propriedades usadas no Dashboard
+  status?: string;
+  title?: string;
+  description?: string;
+  site_url?: string;
 }
 
 
@@ -79,6 +84,14 @@ export interface MetricsData { // Para dados da tabela 'metrics'
   timestamp: string;
   created_at: string;
   custom_data?: Record<string, any>; // Para a EF receive-metrics
+  // Adicionando as propriedades que estão sendo usadas no código
+  total_pageviews?: number;
+  total_revenue?: number;
+  total_impressions?: number;
+  total_clicks?: number;
+  avg_cpc?: number;
+  avg_ctr?: number;
+  avg_rpm?: number;
 }
 
 export interface UserProfileData { // Para dados da tabela 'clients'
@@ -91,6 +104,7 @@ export interface UserProfileData { // Para dados da tabela 'clients'
   subscription_status?: 'active' | 'canceled' | 'past_due' | 'trialing' | 'expired_trial';
   trial_start_date?: string;
   trial_end_date?: string;
+  trial_end?: string; // Adicionando propriedade usada no Navbar
   next_billing_date?: string; // Para Navbar/Configurações
   country?: string;
   timezone?: string;
@@ -150,6 +164,7 @@ export interface RateLimit { // Para dados da tabela 'rate_limits'
   count: number;
   date: string; // YYYY-MM-DD
   operation: string; // Ex: 'analysis', 'script_generation'
+  analyses_limit?: number; // Adicionando propriedade usada no Navbar
   // created_at e updated_at são gerenciados pelo DB
 }
 
@@ -233,10 +248,14 @@ export interface AnalyzeAdSenseResponse {
   success: boolean;
   message?: string;
   analysis_id?: string; 
-  metrics?: Partial<MetricsData & { // Usar Partial para tornar todos os campos opcionais
-    avg_cpc?: number; // Adicionar avg_cpc que não está em MetricsData
-    // total_impressions, total_clicks, avg_ctr, avg_rpm já estão em MetricsData
-    // total_revenue, total_pageviews já estão em MetricsData
+  metrics?: Partial<MetricsData & { 
+    avg_cpc?: number; 
+    total_revenue?: number; // Adicionando as propriedades que estão sendo usadas
+    total_pageviews?: number;
+    total_impressions?: number;
+    total_clicks?: number;
+    avg_ctr?: number;
+    avg_rpm?: number;
   }>;
   optimization_score?: number;
   projected_revenue?: number;
@@ -288,7 +307,7 @@ export interface InvokeFluxOptimizerEnginePayload {
 
 // Interface para os dados de configuração de otimização como exibidos/manipulados na UI (Optimizer.tsx)
 // Diferente de SelectedOptimizationConfig que é mais para o payload da EF.
-export interface OptimizationConfigDisplay {
+export interface OptimizationConfigUI {
   id: string; // e.g., 'auto_ads'
   type: string; // e.g., 'auto_ads'
   title: string;
@@ -302,7 +321,13 @@ export interface OptimizationConfigDisplay {
   requirements: string[];
   warnings: string[];
   settings?: any; // Configurações específicas para esta otimização, se houver
+  // Adicionando aliases para compatibilidade
+  estimatedImpact?: number;
+  implementationTime?: number;
 }
+
+// Renomeando para manter compatibilidade
+export interface OptimizationConfigDisplay extends OptimizationConfigUI {}
 
 
 export interface InvokeFluxOptimizerEngineResponse {

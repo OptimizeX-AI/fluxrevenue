@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
-import { useFluxData } from '../hooks/useFluxData';
+import { useFluxData } from '../hooks/usefluxdata';
 import { useToast } from '../hooks/use-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient'; // Mantido para queries diretas e invoke da EF de PDF

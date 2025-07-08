@@ -511,7 +511,7 @@ export function useMetrics(siteId?: string): { data: MetricsData | null; loading
     const refreshMetrics = useCallback(() => {
         // Se siteId for fornecido, idealmente chamaríamos um refresh específico para esse site.
         // Por enquanto, refresca o bloco de dados que inclui métricas.
-        refreshData('sitesAnalyses'); 
+        refreshData('sites'); 
     }, [refreshData]);
 
     return { 

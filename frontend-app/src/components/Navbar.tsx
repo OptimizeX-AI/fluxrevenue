@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import { useAuth } from '../contexts/AuthContext';
-import { useFluxData } from '../hooks/useFluxData';
+import { useFluxData } from '../hooks/usefluxdata';
 import { supabase } from '../lib/supabaseClient';
 
 // === INTERFACES ===
@@ -698,9 +698,8 @@ const Navbar: React.FC = () => {
   if (!user?.id) return;
   try {
     // ✅ CORREÇÃO: Usar campos corretos e .maybeSingle()
-    const [clientResult, rateLimitResult, notificationsResult] = await Promise.allSettled([
+    const [clientResult, notificationsResult] = await Promise.allSettled([
       supabase.from('clients').select('*').eq('id', user.id).maybeSingle(), // ✅ CORRETO
-      supabase.from('rate_limits').select('*').eq('user_id', user.id).maybeSingle(), // ✅ CORRETO
       supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10) // ✅ CORRETO
     ]);
 
@@ -709,8 +708,8 @@ const Navbar: React.FC = () => {
       const client = clientResult.value.data;          
           // Calculate trial days left
           let trialDaysLeft: number | undefined; // ✅ Tipagem explícita
-if (client.trial_end) {
-  const trialEnd = new Date(client.trial_end);
+if (client.trial_end_date) {
+  const trialEnd = new Date(client.trial_end_date);
   const now = new Date();
   const diffTime = trialEnd.getTime() - now.getTime();
   trialDaysLeft = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
@@ -719,19 +718,11 @@ if (client.trial_end) {
             ...prev,
             plan: client.plan,
             trialDaysLeft,
-            sitesCount: sites?.length || 0
+            sitesCount: sites?.length || 0,
+            analysesUsed: 0, // Default value since we don't have rate_limits table
+            analysesLimit: client.plan === 'free' ? 3 : client.plan === 'basic' ? 25 : 999 // Default limits based on plan
           }));
         }
-
-        // Process rate limits
-      if (rateLimitResult.status === 'fulfilled' && rateLimitResult.value.data) {
-      const rateLimit = rateLimitResult.value.data;
-      setUserStatus(prev => ({
-        ...prev,
-        analysesUsed: rateLimit.count || 0, // ✅ CORRETO: usar 'count' do schema
-        analysesLimit: rateLimit.analyses_limit || 10
-      }));
-    }
 
     if (notificationsResult.status === 'fulfilled' && notificationsResult.value.data) {
               const notificationsData = notificationsResult.value.data.map((notif: any) => ({
