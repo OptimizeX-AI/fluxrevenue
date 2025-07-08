@@ -33,17 +33,17 @@ interface CSVValidation {
   rowCount: number;
   columnCount: number;
   hasRequiredColumns: boolean;
-  requiredColumns: string[];
-  missingColumns: string[];
+  requiredColumns: string[]; 
+  missingColumns: string[]; 
   dataQuality: 'excellent' | 'good' | 'fair' | 'poor';
   qualityScore: number;
   errors: string[];
   warnings: string[];
-  preview: CSVRow[];
+  preview: CSVRow[]; 
 }
 
-interface AnalysisResult {
-  id: string;
+interface AnalysisResult { 
+  id: string; 
   site_id: string;
   client_id: string;
   status: 'processing' | 'completed' | 'failed';
@@ -63,7 +63,7 @@ interface AnalysisResult {
   processing_time_ms?: number;
 }
 
-interface SiteLocal {
+interface SiteLocal { 
   id: string;
   url: string;
   current_rpm?: number | null;
@@ -91,7 +91,7 @@ const normalizeHeader = (header: string): string => {
 
 // Mapeamento de possíveis nomes de colunas para nomes padrão
 const ADSENSE_COLUMN_MAPPING: { [key: string]: keyof ParsedCSVDataSummary | 'skip' } = {
-  'date': 'period_start',
+  'date': 'period_start', 
   'data': 'period_start',
   'dia': 'period_start',
   'page_views': 'total_pageviews',
@@ -101,7 +101,7 @@ const ADSENSE_COLUMN_MAPPING: { [key: string]: keyof ParsedCSVDataSummary | 'ski
   'ad_impressions': 'total_impressions',
   'clicks': 'total_clicks',
   'cliques': 'total_clicks',
-  'estimated_earnings': 'total_revenue',
+  'estimated_earnings': 'total_revenue', 
   'earnings': 'total_revenue',
   'receita_estimada': 'total_revenue',
   'ganhos_estimados': 'total_revenue',
@@ -115,9 +115,9 @@ const ADSENSE_COLUMN_MAPPING: { [key: string]: keyof ParsedCSVDataSummary | 'ski
 
 // Campos padrão que são essenciais após o parsing e mapeamento para a lógica de sumarização
 const REQUIRED_CSV_HEADERS_STANDARD: (keyof ParsedCSVDataSummary)[] = [
-  'total_pageviews',
-  'total_impressions',
-  'total_clicks',
+  'total_pageviews', 
+  'total_impressions', 
+  'total_clicks', 
   'total_revenue'
   // 'period_start' é crucial para determinar o período, mas o parsing tenta encontrá-lo.
   // As médias (avg_ctr, avg_rpm, avg_cpc) são calculadas a partir dos totais.
@@ -129,24 +129,24 @@ const Analyzer: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { user } = useAuth();
-  const { sites, refreshData: refreshFluxData } = useFluxData();
+  const { sites, refreshData: refreshFluxData } = useFluxData(); 
   const { analyzeCSV, loading: analysisHookLoading } = useAnalyzeAdSense(); // Removido error e data não usados diretamente
 
   const [selectedSiteId, setSelectedSiteId] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [parsedCsvSummary, setParsedCsvSummary] = useState<ParsedCSVDataSummary | null>(null);
   const [validation, setValidation] = useState<CSVValidation | null>(null);
-  const [isProcessingUI, setIsProcessingUI] = useState(false);
+  const [isProcessingUI, setIsProcessingUI] = useState(false); 
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([]);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null); 
   const [isDragOver, setIsDragOver] = useState(false);
-
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const siteParam = searchParams.get('site');
-    if (siteParam && sites?.some(site => site.id === siteParam)) {
-        setSelectedSiteId(siteParam);
+  useEffect(() => { 
+    const siteParam = searchParams.get('site'); 
+    if (siteParam && sites?.some(site => site.id === siteParam)) { 
+        setSelectedSiteId(siteParam); 
     }
   }, [searchParams, sites]);
 
@@ -169,10 +169,10 @@ const Analyzer: React.FC = () => {
 
       const rawHeaders = lines[0].split(',').map(h => h.trim());
       const normalizedHeaders = rawHeaders.map(normalizeHeader);
-
+      
       const headerMap: { [key: string]: number } = {}; // Mapeia standardHeaderKey para o índice da coluna original
       const foundStandardHeaders = new Set<string>();
-
+      
       REQUIRED_CSV_HEADERS_STANDARD.forEach(standardHeaderKey => {
         for (const [adsenseHeaderPattern, mappedStandardKey] of Object.entries(ADSENSE_COLUMN_MAPPING)) {
             if (standardHeaderKey === mappedStandardKey) { // Procurar pelo standard key nos mapeamentos
@@ -180,7 +180,7 @@ const Analyzer: React.FC = () => {
                 if (headerIndex !== -1) {
                     headerMap[standardHeaderKey as string] = headerIndex;
                     foundStandardHeaders.add(standardHeaderKey);
-                    break;
+                    break; 
                 }
             }
         }
@@ -196,7 +196,7 @@ const Analyzer: React.FC = () => {
         standardHeader => !foundStandardHeaders.has(standardHeader)
       );
       const hasRequired = missingStandardHeaders.length === 0;
-
+      
       let tempSummary: ParsedCSVDataSummary = {
         total_pageviews: 0, total_impressions: 0, total_clicks: 0, total_revenue: 0,
         avg_ctr: 0, avg_rpm: 0, avg_cpc: 0, file_name: file.name
@@ -220,21 +220,21 @@ const Analyzer: React.FC = () => {
             }
             rowObject[standardKey] = value;
         });
-
+        
         if (i <= 5) previewData.push(rowObject);
 
         tempSummary.total_pageviews += (rowObject.total_pageviews as number || 0);
         tempSummary.total_impressions += (rowObject.total_impressions as number || 0);
         tempSummary.total_clicks += (rowObject.total_clicks as number || 0);
         tempSummary.total_revenue += (rowObject.total_revenue as number || 0);
-
+        
         const dateStr = rowObject['period_start'] as string; // 'date' é mapeado para 'period_start'
         if (dateStr) {
             let currentDate: Date | null = null;
-            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { currentDate = new Date(dateStr + "T00:00:00Z"); }
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { currentDate = new Date(dateStr + "T00:00:00Z"); } 
             else if (/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.test(dateStr)) { const p = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)!; currentDate = new Date(Date.UTC(Number(p[3]), Number(p[2])-1, Number(p[1]))); } // MM/DD/YYYY -> DD/MM/YYYY
              // Adicione mais formatos de data se necessário, ou use uma biblioteca
-
+            
             if (currentDate && !isNaN(currentDate.getTime())) {
                 if (!minDate || currentDate.getTime() < minDate.getTime()) minDate = currentDate;
                 if (!maxDate || currentDate.getTime() > maxDate.getTime()) maxDate = currentDate;
@@ -255,14 +255,14 @@ const Analyzer: React.FC = () => {
       if (dataRowCount >= 30) qualityScore += 30; else if (dataRowCount >= 7) qualityScore += 15;
       if (tempSummary.period_start && tempSummary.period_end) qualityScore += 20;
       qualityScore = Math.min(100, qualityScore);
-
+      
       const dataQualityVal: CSVValidation['dataQuality'] = qualityScore >= 80 ? 'excellent' : qualityScore >= 60 ? 'good' : qualityScore >= 40 ? 'fair' : 'poor';
       const errors: string[] = [];
       const warnings: string[] = []; // Declarar o array de warnings
 
       if (!hasRequired) errors.push(`Colunas essenciais não encontradas no CSV: ${missingStandardHeaders.join(', ')}. Verifique o mapeamento e o arquivo.`);
       if (dataRowCount < 1) errors.push("Nenhuma linha de dados válida encontrada no CSV.");
-
+      
       // Adicionar ao array 'warnings' declarado
       if (!tempSummary.period_start || !tempSummary.period_end) warnings.push("Não foi possível determinar o período (data inicial/final) a partir do CSV.");
       if (dataRowCount < 7 && dataRowCount > 0) warnings.push('Poucos dados para análise ideal (recomendado: 7+ dias).');
@@ -291,7 +291,7 @@ const Analyzer: React.FC = () => {
     };
     reader.readAsText(file, 'UTF-8');
   }, [toast]);
-
+  
   const handleDropCb = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(false); const files = Array.from(e.dataTransfer.files); const found = files.find(f => f.type === 'text/csv' || f.name.toLowerCase().endsWith('.csv')); if (found) { setCsvFile(found); parseAndValidateCSV(found); } else { toast({ title: 'Arquivo Inválido', description: 'CSV apenas.', variant: 'destructive' }); } }, [toast, parseAndValidateCSV]);
   const handleFileSelectCb = useCallback((e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { setCsvFile(file); parseAndValidateCSV(file); } }, [parseAndValidateCSV]);
 
@@ -304,22 +304,22 @@ const Analyzer: React.FC = () => {
       return;
     }
 
-    setIsProcessingUI(true);
+    setIsProcessingUI(true); 
     initializeProcessingSteps();
     const startTime = Date.now();
-
+    
     try {
       updateProcessingStep('parsing', { status: 'processing', progress: 50 });
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 500)); 
       updateProcessingStep('parsing', { status: 'completed', progress: 100 });
-
+      
       updateProcessingStep('analysis', { status: 'processing', progress: 30 });
 
       const payloadForEF: AnalyzeAdSensePayload = {
-        ...parsedCsvSummary,
+        ...parsedCsvSummary, 
         site_id: selectedSiteId,
         // site_url: selectedSite?.url, // Removido - EF busca internamente via site_id
-        client_id: user.id,
+        client_id: user.id, 
         validation_info: {
             rowCount: validation.rowCount,
             columnCount: validation.columnCount,
@@ -333,20 +333,20 @@ const Analyzer: React.FC = () => {
         period_start: parsedCsvSummary.period_start,
         period_end: parsedCsvSummary.period_end,
       };
-
+      
       // analyzeCSV agora espera um único objeto payload
-      const efResponse = await analyzeCSV(payloadForEF);
-
+      const efResponse = await analyzeCSV(payloadForEF); 
+      
       if (!efResponse.success) {
         throw new Error(efResponse.message || 'Falha na análise da Edge Function');
       }
-
+      
       updateProcessingStep('analysis', { status: 'completed', progress: 100 });
       updateProcessingStep('optimization', { status: 'processing', progress: 60 }); await new Promise(resolve => setTimeout(resolve, 1000)); updateProcessingStep('optimization', { status: 'completed', progress: 100 });
       updateProcessingStep('report', { status: 'processing', progress: 80 }); await new Promise(resolve => setTimeout(resolve, 500)); updateProcessingStep('report', { status: 'completed', progress: 100 });
-
+      
       const processingTime = Date.now() - startTime;
-
+      
       const resultData: AnalysisResult = {
         id: efResponse.analysis_id || `local_${Date.now()}`,
         site_id: selectedSiteId, client_id: user.id, status: 'completed',
@@ -367,7 +367,7 @@ const Analyzer: React.FC = () => {
       };
       setAnalysisResult(resultData);
       toast({ title: 'Análise Concluída! 🚀', description: `Processamento via EF em ${(processingTime / 1000).toFixed(1)}s. ${efResponse.message || ''}` });
-
+      
     } catch (error: any) { /* ... */ console.error('❌ Erro na análise:', error); const currentProcessingStep = processingSteps.find(s => s.status === 'processing'); if (currentProcessingStep) { updateProcessingStep(currentProcessingStep.id, { status: 'error', progress: 0 }); } toast({ title: 'Erro na Análise', description: error.message || 'Erro ao processar dados.', variant: 'destructive' });
     } finally {
       setIsProcessingUI(false);
