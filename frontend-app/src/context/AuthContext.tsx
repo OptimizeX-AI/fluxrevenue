@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
-import { useFluxData } from '../hooks/useFluxData';
+import { useFluxData } from '../hooks/usefluxdata';
 import { UserProfileData } from '../types/interfaces'; // Para tipar userProfile
 
 interface AuthContextType {
@@ -28,7 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authLoading, setAuthLoading] = useState(true);
   const [isAuthReady, setIsAuthReady] = useState(false);
   
-  const { userProfile: fluxUserProfile, loading: fluxDataLoading, updateUserProfile } = useFluxData();
+  const { userProfile: fluxUserProfile, isLoading: fluxDataLoading, updateUserProfile, clearFluxCache } = useFluxData(user?.id);
 
   const isMountedRef = useRef(true);
   const lastSessionTokenRef = useRef<string | null>(null);
@@ -129,7 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isAuthReady]); // Removido user.id daqui, pois o plano vem do fluxData que reage a user.id
 
   const login = async (email: string, password: string): Promise<void> => { setAuthLoading(true); try { const { error } = await supabase.auth.signInWithPassword({ email, password }); if (error) throw error; console.log('✅ AuthContext: Login realizado com sucesso'); } catch (error) { console.error('❌ AuthContext: Erro no login:', error); throw error; } finally { setAuthLoading(false); } };
-  const logout = async (): Promise<void> => { setAuthLoading(true); try { const { error } = await supabase.auth.signOut(); if (error) throw error; console.log('✅ AuthContext: Logout realizado com sucesso'); setUser(null); setSession(null); lastSessionTokenRef.current = null; fluxData.clearFluxCache(); /* Limpar cache do useFluxData no logout */ } catch (error) { console.error('❌ AuthContext: Erro no logout:', error); throw error; } finally { setAuthLoading(false); } };
+  const logout = async (): Promise<void> => { setAuthLoading(true); try { const { error } = await supabase.auth.signOut(); if (error) throw error; console.log('✅ AuthContext: Logout realizado com sucesso'); setUser(null); setSession(null); lastSessionTokenRef.current = null; clearFluxCache(); /* Limpar cache do useFluxData no logout */ } catch (error) { console.error('❌ AuthContext: Erro no logout:', error); throw error; } finally { setAuthLoading(false); } };
   const refreshAuth = async (): Promise<void> => { try { const { data: { session : refreshedSession }, error } = await supabase.auth.getSession(); if (error) throw error; setSession(refreshedSession); setUser(refreshedSession?.user ?? null); console.log('✅ AuthContext: Auth refreshed'); } catch (error) { console.error('❌ AuthContext: Erro ao refresh auth:', error); throw error; } };
 
   const canPerformAction = useCallback((action: string): boolean => {

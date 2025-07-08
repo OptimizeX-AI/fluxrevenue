@@ -2,23 +2,23 @@
 import React, { memo, useMemo, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
-import { useAuth } from '../contexts/AuthContext';
-import { useFluxData } from '../hooks/useFluxData'; // ✅ Usar hook otimizado
+import { useAuth } from '../context/AuthContext';
+import { useFluxData } from '../hooks/usefluxdata'; // ✅ Usar hook otimizado
 import { supabase } from '../lib/supabaseClient';
 
 // === INTERFACES OTIMIZADAS ===
 interface ClientData {
   id: string;
   name: string;
-  email: string;
+  email?: string | null; // Permitir null/undefined
   plan: 'free' | 'trial' | 'basic' | 'pro' | 'enterprise';
   trial_end?: string;
   created_at: string;
-  subscription_status?: 'active' | 'canceled' | 'past_due' | 'trialing';
+  subscription_status?: 'active' | 'canceled' | 'past_due' | 'trialing' | 'expired_trial' | null; // Permitir null
   // ✅ Campos adicionais baseados na estrutura real
   monthly_limit?: number;
   analyses_used?: number;
-  next_billing_date?: string;
+  next_billing_date?: string | null; // Permitir null
 }
 
 interface TrialBannerProps {
@@ -423,8 +423,8 @@ const TrialBanner: React.FC<TrialBannerProps> = memo(({
   const {
     analyses,
     sites,
-    userSettings,
-    loading,
+    currentUserPreferences: userSettings,
+    isLoading,
     refreshData
   } = useFluxData();
   
@@ -454,7 +454,10 @@ const TrialBanner: React.FC<TrialBannerProps> = memo(({
         
         if (data) {
           console.log('✅ Dados do cliente carregados:', data);
-          setClientData(data);
+          setClientData({
+            ...data,
+            name: data.name || data.email?.split('@')[0] || 'Usuario'
+          });
         } else {
           console.log('ℹ️ Cliente não encontrado, criando...');
           await createDefaultClient();
@@ -488,7 +491,10 @@ const TrialBanner: React.FC<TrialBannerProps> = memo(({
         
         if (!error && data) {
           console.log('✅ Cliente criado/atualizado:', data);
-          setClientData(data);
+          setClientData({
+            ...data,
+            name: data.name || data.email?.split('@')[0] || 'Usuario'
+          });
         }
       } catch (error) {
         console.error('❌ Erro ao criar cliente:', error);
@@ -504,7 +510,11 @@ const TrialBanner: React.FC<TrialBannerProps> = memo(({
         { event: 'UPDATE', schema: 'public', table: 'clients' },
         (payload) => {
           console.log('📊 Plano atualizado:', payload.new);
-          setClientData(payload.new as ClientData);
+          const newData = payload.new as any;
+          setClientData({
+            ...newData,
+            name: newData.name || newData.email?.split('@')[0] || 'Usuario'
+          });
         }
       )
       .subscribe();
@@ -722,13 +732,13 @@ const TrialBanner: React.FC<TrialBannerProps> = memo(({
 
   // ✅ Controle de visibilidade
   useEffect(() => {
-    if (trialStatus.isVisible && !dismissed && !loading) {
+    if (trialStatus.isVisible && !dismissed && !isLoading('global')) {
       setIsVisible(true);
     }
-  }, [trialStatus.isVisible, dismissed, loading]);
+  }, [trialStatus.isVisible, dismissed, isLoading]);
 
   // === RENDER CONDITIONS ===
-  if (loading || !trialStatus.isVisible || !clientData || dismissed || !isVisible) {
+  if (isLoading('global') || !trialStatus.isVisible || !clientData || dismissed || !isVisible) {
     return null;
   }
 

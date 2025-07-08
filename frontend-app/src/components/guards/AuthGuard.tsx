@@ -1,7 +1,7 @@
 // src/components/guards/AuthGuard.tsx - ENTERPRISE GRADE
 import React, { useState, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../LoadingSpinner';
 
 interface AuthGuardProps {

@@ -3,12 +3,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
-import { useFluxData } from '../hooks/useFluxData';
-import { useAnalyzeAdSense } from '../hooks/useFluxData'; // Corrigido para useFluxData (casing correto)
+import { useFluxData } from '../hooks/usefluxdata';
+import { useAnalyzeAdSense } from '../hooks/usefluxdata'; // Corrigido para useFluxData (casing correto)
 import { AnalyzeAdSensePayload, AnalyzeAdSenseResponse } from '../types/interfaces';
 import { useToast } from '../hooks/use-toast';
 import MetricsCard from './MetricsCard';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 // === INTERFACES LOCAIS ===
 interface CSVRow {

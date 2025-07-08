@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Removido useRef não utilizado
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
-import { useFluxData } from '../hooks/useFluxData';
+import { useFluxData } from '../hooks/usefluxdata';
 import {
     InvokeFluxOptimizerEnginePayload,
     InvokeFluxOptimizerEngineResponse,
@@ -11,7 +11,7 @@ import {
     SiteAnalysisDataForOptimizer // Tipo para os dados da análise enviados à EF
 } from '../types/interfaces';
 import { useToast } from '../hooks/use-toast';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient'; // Mantido para inserts diretos (optimization_tasks) e selects (adsense_analyses)
 
 // === INTERFACES LOCAIS (mantidas para estrutura interna do componente) ===
@@ -112,7 +112,7 @@ Header.defaultProps = { children: React.createElement(React.Fragment) }; Title.d
 
 
 // === CONSTANTS ===
-const OPTIMIZATION_CONFIGS_DATA: OptimizationConfigUI[] = [ /* ... (mantido como no original) ... */ { id: 'auto_ads', type: 'auto_ads', title: 'Google Auto Ads Otimizado', description: 'Implementa Auto Ads com configurações personalizadas para máximo RPM mantendo experiência do usuário.', category: 'revenue', difficulty: 'easy', estimatedImpact: 25, implementationTime: 10, enabled: false, priority: 1, requirements: ['Google AdSense aprovado', 'Site com conteúdo original'], warnings: ['Pode afetar layout inicial', 'Monitorar métricas de UX'] }, { id: 'ad_placement', type: 'ad_placement', title: 'Posicionamento Estratégico', description: 'Posiciona anúncios em locais de alta visibilidade e engajamento baseado em heatmaps de usuário.', category: 'revenue', difficulty: 'medium', estimatedImpact: 30, implementationTime: 20, enabled: false, priority: 2, requirements: ['Analytics configurado', 'Acesso ao código HTML'], warnings: ['Requer testes A/B', 'Impacto em Core Web Vitals'] }, { id: 'lazy_loading', type: 'lazy_loading', title: 'Lazy Loading Inteligente', description: 'Carregamento sob demanda para melhorar velocidade sem perder impressões de anúncios.', category: 'performance', difficulty: 'medium', estimatedImpact: 15, implementationTime: 25, enabled: false, priority: 3, requirements: ['Site responsivo', 'JavaScript habilitado'], warnings: ['Pode afetar viewability inicial'] }, { id: 'ad_formats', type: 'ad_formats', title: 'Formatos Otimizados', description: 'Implementa formatos de anúncio com melhor performance: Responsive, Multiplex, In-feed.', category: 'revenue', difficulty: 'easy', estimatedImpact: 20, implementationTime: 15, enabled: false, priority: 4, requirements: ['AdSense aprovado', 'Site mobile-friendly'], warnings: ['Testar em diferentes dispositivos'] }, { id: 'targeting', type: 'targeting', title: 'Targeting Avançado', description: 'Configurações de segmentação de anúncios para atrair anunciantes premium e aumentar CPC.', category: 'revenue', difficulty: 'hard', estimatedImpact: 35, implementationTime: 30, enabled: false, priority: 5, requirements: ['Alto tráfego', 'Conteúdo de qualidade', 'Audiência definida'], warnings: ['Requer análise de audiência', 'Resultados podem variar'] }, { id: 'blocking', type: 'blocking', title: 'Bloqueio de Anúncios de Baixo CPC', description: 'Remove categorias de anúncios com baixo valor para priorizar anunciantes premium.', category: 'revenue', difficulty: 'medium', estimatedImpact: 18, implementationTime: 20, enabled: false, priority: 6, requirements: ['Dados históricos de 30+ dias', 'Volume mínimo de impressões'], warnings: ['Pode reduzir fill rate inicialmente'] } ];
+const OPTIMIZATION_CONFIGS_DATA: OptimizationConfigUI[] = [ /* ... (mantido como no original) ... */ { id: 'auto_ads', type: 'auto_ads', title: 'Google Auto Ads Otimizado', description: 'Implementa Auto Ads com configurações personalizadas para máximo RPM mantendo experiência do usuário.', category: 'revenue', difficulty: 'easy', estimated_impact: 25, implementation_time: 10, enabled: false, priority: 1, requirements: ['Google AdSense aprovado', 'Site com conteúdo original'], warnings: ['Pode afetar layout inicial', 'Monitorar métricas de UX'] }, { id: 'ad_placement', type: 'ad_placement', title: 'Posicionamento Estratégico', description: 'Posiciona anúncios em locais de alta visibilidade e engajamento baseado em heatmaps de usuário.', category: 'revenue', difficulty: 'medium', estimated_impact: 30, implementation_time: 20, enabled: false, priority: 2, requirements: ['Analytics configurado', 'Acesso ao código HTML'], warnings: ['Requer testes A/B', 'Impacto em Core Web Vitals'] }, { id: 'lazy_loading', type: 'lazy_loading', title: 'Lazy Loading Inteligente', description: 'Carregamento sob demanda para melhorar velocidade sem perder impressões de anúncios.', category: 'performance', difficulty: 'medium', estimated_impact: 15, implementation_time: 25, enabled: false, priority: 3, requirements: ['Site responsivo', 'JavaScript habilitado'], warnings: ['Pode afetar viewability inicial'] }, { id: 'ad_formats', type: 'ad_formats', title: 'Formatos Otimizados', description: 'Implementa formatos de anúncio com melhor performance: Responsive, Multiplex, In-feed.', category: 'revenue', difficulty: 'easy', estimated_impact: 20, implementation_time: 15, enabled: false, priority: 4, requirements: ['AdSense aprovado', 'Site mobile-friendly'], warnings: ['Testar em diferentes dispositivos'] }, { id: 'targeting', type: 'targeting', title: 'Targeting Avançado', description: 'Configurações de segmentação de anúncios para atrair anunciantes premium e aumentar CPC.', category: 'revenue', difficulty: 'hard', estimated_impact: 35, implementation_time: 30, enabled: false, priority: 5, requirements: ['Alto tráfego', 'Conteúdo de qualidade', 'Audiência definida'], warnings: ['Requer análise de audiência', 'Resultados podem variar'] }, { id: 'blocking', type: 'blocking', title: 'Bloqueio de Anúncios de Baixo CPC', description: 'Remove categorias de anúncios com baixo valor para priorizar anunciantes premium.', category: 'revenue', difficulty: 'medium', estimated_impact: 18, implementation_time: 20, enabled: false, priority: 6, requirements: ['Dados históricos de 30+ dias', 'Volume mínimo de impressões'], warnings: ['Pode reduzir fill rate inicialmente'] } ];
 
 // === COMPONENT PRINCIPAL ===
 const Optimizer: React.FC = () => {
@@ -141,7 +141,7 @@ const Optimizer: React.FC = () => {
   useEffect(() => { /* ... (lógica de inicialização de selectedSiteId) ... */ const siteParam = searchParams.get('site'); if (siteParam && sites?.some(site => site.id === siteParam)) { setSelectedSiteId(siteParam); } if (location.state?.fromAnalysis && location.state?.siteId) { setSelectedSiteId(location.state.siteId); } }, [searchParams, location.state, sites]);
   const selectedSite = useMemo(() => sites?.find(s => s.id === selectedSiteId) as SiteLocal | undefined, [sites, selectedSiteId]);
 
-  const loadSiteAnalysis = useCallback(async (siteId: string) => { /* ... (lógica como antes, mas usando AnalysisDataLocal) ... */ if (!user?.id || !siteId) return; try { const { data, error } = await supabase .from('adsense_analyses') .select('*') .eq('site_id', siteId) .eq('client_id', user.id) .order('created_at', { ascending: false }) .maybeSingle(); if (error && error.code !== 'PGRST116') { console.error('❌ Erro ao carregar análise:', error); return; } if (data) { const analysisData: AnalysisDataLocal = { id: data.id, site_id: data.site_id, client_id: data.client_id, total_revenue: data.total_revenue || 0, total_pageviews: data.total_pageviews || 0, total_impressions: data.total_impressions || 0, total_clicks: data.total_clicks || 0, avg_cpc: data.avg_cpc || 0, avg_ctr: data.avg_ctr || 0, avg_rpm: data.avg_rpm || 0, optimization_score: data.optimization_score || 0, projected_revenue: data.projected_revenue || 0, projected_increase: data.projected_increase || 0, analysis_results: data.analysis_results || {}, opportunities: data.opportunities || [], created_at: data.created_at }; setCurrentAnalysis(analysisData); } else { setCurrentAnalysis(null); } } catch (err) { console.error('❌ Erro ao carregar análise:', err); } }, [user?.id]);
+  const loadSiteAnalysis = useCallback(async (siteId: string) => { /* ... (lógica como antes, mas usando AnalysisDataLocal) ... */ if (!user?.id || !siteId) return; try { const { data, error } = await supabase .from('adsense_analyses') .select('*') .eq('site_id', siteId) .eq('client_id', user.id) .order('created_at', { ascending: false }) .maybeSingle(); if (error && error.code !== 'PGRST116') { console.error('❌ Erro ao carregar análise:', error); return; } if (data) { const analysisData: AnalysisDataLocal = { id: data.id, site_id: data.site_id, client_id: data.client_id, total_revenue: data.total_revenue || 0, total_pageviews: data.total_pageviews || 0, total_impressions: data.total_impressions || 0, total_clicks: data.total_clicks || 0, avg_cpc: data.avg_cpc || 0, avg_ctr: data.avg_ctr || 0, avg_rpm: data.avg_rpm || 0, optimization_score: data.optimization_score || 0, projected_revenue: data.projected_revenue || 0, projected_increase: data.projected_increase || 0, analysis_results: data.analysis_results || {}, opportunities: Array.isArray(data.opportunities) ? data.opportunities : [], created_at: data.created_at }; setCurrentAnalysis(analysisData); } else { setCurrentAnalysis(null); } } catch (err) { console.error('❌ Erro ao carregar análise:', err); } }, [user?.id]);
   useEffect(() => { if (selectedSiteId) { loadSiteAnalysis(selectedSiteId); setCurrentSiteScript(null); /* Limpar script ao mudar de site */ } }, [selectedSiteId, loadSiteAnalysis]);
 
   const getOptimizationStatus = useCallback((_site: SiteLocal, analysis?: AnalysisDataLocal | null) => { /* ... */ const score = analysis?.optimization_score || 0; if (score >= 85) return 'excellent'; if (score >= 70) return 'good'; if (score >= 50) return 'needs_improvement'; return 'critical'; }, []);
@@ -161,9 +161,9 @@ const Optimizer: React.FC = () => {
     );
   }, []);
 
-  useEffect(() => { /* ... (cálculo de estimatedImprovement) ... */ const currentSelectedConfigs = optimizationConfigs.filter(config => config.enabled); const totalImprovement = currentSelectedConfigs.reduce((acc, config) => acc + (config.estimatedImpact * (1 - acc / 100)), 0); setEstimatedImprovement(Math.min(totalImprovement, 85)); }, [optimizationConfigs]);
+  useEffect(() => { /* ... (cálculo de estimatedImprovement) ... */ const currentSelectedConfigs = optimizationConfigs.filter(config => config.enabled); const totalImprovement = currentSelectedConfigs.reduce((acc, config) => acc + ((config.estimated_impact || 0) * (1 - acc / 100)), 0); setEstimatedImprovement(Math.min(totalImprovement, 85)); }, [optimizationConfigs]);
 
-  const initializeProcessingSteps = useCallback(() => { /* ... */ return [ { id: 'analysis', title: 'Analisando Site', status: 'processing', progress: 0 }, { id: 'optimization', title: 'Aplicando Otimizações', status: 'pending', progress: 0 }, { id: 'script', title: 'Gerando Script', status: 'pending', progress: 0 }, { id: 'validation', title: 'Validação Final', status: 'pending', progress: 0 } ]; }, []);
+  const initializeProcessingSteps = useCallback((): ProcessingStep[] => { /* ... */ return [ { id: 'analysis', title: 'Analisando Site', description: 'Analisando dados do site', status: 'processing' as const, progress: 0 }, { id: 'optimization', title: 'Aplicando Otimizações', description: 'Aplicando otimizações selecionadas', status: 'pending' as const, progress: 0 }, { id: 'script', title: 'Gerando Script', description: 'Gerando script de otimização', status: 'pending' as const, progress: 0 }, { id: 'validation', title: 'Validação Final', description: 'Validando configurações', status: 'pending' as const, progress: 0 } ]; }, []);
   const updateProcessingStep = useCallback((stepId: string, updates: Partial<ProcessingStep>) => { setProcessingSteps(prev => prev.map(step => step.id === stepId ? { ...step, ...updates } : step )); }, []);
 
   const handleGenerateOptimization = useCallback(async () => {
@@ -187,8 +187,8 @@ const Optimizer: React.FC = () => {
             type: c.type,
             title: c.title,
             settings: c.settings, // Assegurar que settings seja passado
-            estimated_impact: c.estimatedImpact,
-            implementation_time: c.implementationTime
+            estimated_impact: c.estimated_impact,
+            implementation_time: c.implementation_time
         }));
 
       const taskPayloadForDb: Omit<OptimizationTaskLocal, 'id' | 'created_at' | 'updated_at' | 'started_at' | 'completed_at' | 'results' | 'error_message' | 'processing_time_ms'> = {
@@ -222,7 +222,7 @@ const Optimizer: React.FC = () => {
       const efPayload: Omit<InvokeFluxOptimizerEnginePayload, 'user_id' | 'timestamp'> = {
         site_id: selectedSiteId,
         optimizations: configsToApply,
-        analysis_data: taskPayloadForDb.actions.analysis_data,
+        analysis_data: taskPayloadForDb.actions?.analysis_data || null,
         taskId: taskResult.id, // Passar o ID da tarefa criada
       };
 
