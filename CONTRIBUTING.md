@@ -156,3 +156,43 @@ except Exception as e:
     logger.critical("An unexpected critical error occurred", exc_info=True)
     # Re-raise or handle unexpected errors gracefully
 ```
+
+## 4. Plan and Task Structure
+
+To enable advanced scheduling and dependency management, all execution plans generated and consumed within the ecosystem must adhere to the following structure.
+
+A **plan** is a list of **task** objects.
+
+### 4.1. Task Object Schema
+
+Each task object must be a dictionary with the following keys:
+
+-   `task_id` (int): A unique integer identifier for the task within the plan, starting from 1.
+-   `agent` (str): The name of the specialized agent responsible for executing the task (e.g., `developer_agent`, `qa_agent`).
+-   `description` (str): A clear, concise description of what the task entails.
+-   `depends_on` (List[int]): A list of `task_id`s that must be completed before this task can begin. An empty list `[]` signifies that the task has no dependencies and can start immediately.
+
+### 4.2. Example Plan
+
+```json
+[
+  {
+    "task_id": 1,
+    "agent": "database_architect",
+    "description": "Design Database Schema",
+    "depends_on": []
+  },
+  {
+    "task_id": 2,
+    "agent": "developer_agent",
+    "description": "Develop Backend API",
+    "depends_on": [1]
+  },
+  {
+    "task_id": 3,
+    "agent": "qa_agent",
+    "description": "Write E2E Tests for API",
+    "depends_on": [2]
+  }
+]
+```

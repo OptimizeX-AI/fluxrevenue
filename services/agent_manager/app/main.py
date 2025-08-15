@@ -93,28 +93,41 @@ async def handle_project_creation_task(project_data: dict):
             logger.info("Project saved to database.", extra={"props": {"project_id": new_project.id}})
 
             execution_plan = planner.generate_plan(new_project.requirements)
-            new_project.state = {"plan": execution_plan, "current_task_index": 0, "artifacts": {}}
+            new_project.state = {
+                "plan": execution_plan,
+                "completed_task_ids": [],
+                "dispatched_task_ids": [],
+                "artifacts": {}
+            }
             new_project.status = "in_progress"
 
             await session.commit()
             logger.info("Project state initialized in DB.", extra={"props": {"project_id": new_project.id}})
 
+            # Dispatch all initial tasks that have no dependencies
             if execution_plan:
-                task_to_dispatch = execution_plan[0]
-                task_to_dispatch['project_name'] = new_project.name
-                task_to_dispatch['requirements'] = new_project.requirements
-                agent_name = task_to_dispatch['agent']
-                dispatch_channel = f"{agent_name}_tasks"
-                await redis_client.publish(dispatch_channel, json.dumps(task_to_dispatch))
-                logger.info("Dispatched first task.", extra={"props": {"project_id": new_project.id, "task_id": task_to_dispatch.get('task_id'), "agent": agent_name}})
+                initial_tasks = [task for task in execution_plan if not task.get('depends_on')]
+                logger.info(f"Dispatching {len(initial_tasks)} initial tasks.", extra={"props": {"project_id": new_project.id}})
+                for task in initial_tasks:
+                    task_to_dispatch = task.copy()
+                    task_to_dispatch['project_name'] = new_project.name
+                    task_to_dispatch['requirements'] = new_project.requirements
+                    agent_name = task_to_dispatch['agent']
+                    dispatch_channel = f"{agent_name}_tasks"
+                    await redis_client.publish(dispatch_channel, json.dumps(task_to_dispatch))
+                    logger.info("Dispatched initial task.", extra={"props": {"project_id": new_project.id, "task_id": task_to_dispatch.get('task_id'), "agent": agent_name}})
         except SQLAlchemyError as e:
             raise InfrastructureError("database", e)
 
 async def handle_task_completion_notification(notification_data: dict):
-    """Handles the logic for processing a task completion notification."""
+    """
+    Handles a task completion notification, resolves dependencies, and dispatches new tasks.
+    """
     project_name = notification_data.get('project_name')
-    if not project_name:
-        raise TaskValidationError("Project name missing from completion notification.", details=notification_data)
+    completed_task_id = notification_data.get('task_id')
+
+    if not project_name or not completed_task_id:
+        raise TaskValidationError("Project name or completed task ID missing from notification.", details=notification_data)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -126,40 +139,61 @@ async def handle_task_completion_notification(notification_data: dict):
 
             state = project.state
             plan = state.get("plan", [])
-            current_task_index = state.get("current_task_index", 0)
-            completed_task_id = notification_data.get('task_id')
+            completed_ids = set(state.get("completed_task_ids", []))
+            dispatched_ids = set(state.get("dispatched_task_ids", []))
 
-            if not plan or current_task_index >= len(plan):
-                raise TaskValidationError("Project has invalid state.", details={"project_id": project.id, "reason": "Plan is empty or task index is out of bounds."})
+            # Add the newly completed task
+            if completed_task_id not in completed_ids:
+                completed_ids.add(completed_task_id)
+                state["completed_task_ids"] = sorted(list(completed_ids))
 
-            current_task = plan[current_task_index]
-            if current_task.get('task_id') != completed_task_id:
-                raise TaskValidationError("Mismatched task ID.", details={"project_id": project.id, "expected": current_task.get('task_id'), "received": completed_task_id})
-
+            # Store artifacts
             if "artifacts" in notification_data and notification_data["artifacts"]:
-                state["artifacts"][str(completed_task_id)] = notification_data["artifacts"]
+                state.setdefault("artifacts", {})[str(completed_task_id)] = notification_data["artifacts"]
                 logger.info("Stored artifacts for task.", extra={"props": {"project_id": project.id, "task_id": completed_task_id}})
 
-            state["current_task_index"] += 1
-            project.status = 'in_progress'
+            # Find tasks that are not yet completed or dispatched
+            active_ids = completed_ids.union(dispatched_ids)
+            runnable_tasks = [task for task in plan if task.get('task_id') not in active_ids]
 
-            if state["current_task_index"] >= len(plan):
+            # Check for new tasks to dispatch
+            newly_dispatchable_tasks = []
+            for task in runnable_tasks:
+                if set(task.get('depends_on', [])).issubset(completed_ids):
+                    newly_dispatchable_tasks.append(task)
+
+            if newly_dispatchable_tasks:
+                logger.info(f"Dispatching {len(newly_dispatchable_tasks)} newly unlocked tasks.", extra={"props": {"project_id": project.id}})
+                all_artifacts = [artifact for task_artifacts in state.get("artifacts", {}).values() for artifact in task_artifacts]
+
+                for task in newly_dispatchable_tasks:
+                    dispatched_ids.add(task.get('task_id'))
+                    task_to_dispatch = task.copy()
+                    task_to_dispatch.update({
+                        'project_name': project.name,
+                        'requirements': project.requirements,
+                        'context_artifacts': all_artifacts
+                    })
+                    agent_name = task_to_dispatch['agent']
+                    dispatch_channel = f"{agent_name}_tasks"
+                    await redis_client.publish(dispatch_channel, json.dumps(task_to_dispatch))
+                    logger.info("Dispatched next task.", extra={"props": {"project_id": project.id, "task_id": task_to_dispatch.get('task_id'), "agent": agent_name}})
+
+            # Update dispatched tasks list in state
+            state["dispatched_task_ids"] = sorted(list(dispatched_ids))
+
+            # Check for project completion
+            if len(completed_ids) == len(plan):
                 project.status = 'completed'
-                logger.info("Project completed successfully.", extra={"props": {"project_id": project.id}})
+                logger.info("Project completed successfully: all tasks are done.", extra={"props": {"project_id": project.id}})
             else:
-                next_task = plan[state["current_task_index"]]
-                next_task.update({
-                    'project_name': project.name,
-                    'requirements': project.requirements,
-                    'context_artifacts': [artifact for task_artifacts in state.get("artifacts", {}).values() for artifact in task_artifacts]
-                })
-                agent_name = next_task['agent']
-                dispatch_channel = f"{agent_name}_tasks"
-                await redis_client.publish(dispatch_channel, json.dumps(next_task))
-                logger.info("Dispatched next task.", extra={"props": {"project_id": project.id, "task_id": next_task.get('task_id'), "agent": agent_name}})
+                project.status = 'in_progress'
+                if not newly_dispatchable_tasks:
+                    logger.info("Task completed, but no new tasks are ready to be dispatched yet.", extra={"props": {"project_id": project.id}})
 
             flag_modified(project, "state")
             await session.commit()
+
         except SQLAlchemyError as e:
             raise InfrastructureError("database", e)
 
