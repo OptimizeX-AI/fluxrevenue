@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Download spacy language model
 RUN python -m spacy download en_core_web_sm
 
-# Copy the content of the local src directory to the working directory
-COPY . .
+# Copy the application source code to the working directory
+COPY ./app .
 
 # Specify the command to run on container startup
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

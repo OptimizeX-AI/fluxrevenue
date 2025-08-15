@@ -5,3 +5,8 @@ spacy
 SQLAlchemy
 asyncpg
 qdrant-client
+python-json-logger
+
+# Testing dependencies
+pytest
+pytest-asyncio
