@@ -1,0 +1,117 @@
+services:
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+
+  api_gateway:
+    build:
+      context: ./services/api_gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  database_architect:
+    build:
+      context: ./services/database_architect
+    ports:
+      - "8006:8006"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  devops_agent:
+    build:
+      context: ./services/devops_agent
+    ports:
+      - "8007:8007"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  security_agent:
+    build:
+      context: ./services/security_agent
+    ports:
+      - "8008:8008"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  qa_agent:
+    build:
+      context: ./services/qa_agent
+    ports:
+      - "8004:8004"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  code_reviewer:
+    build:
+      context: ./services/code_reviewer
+    ports:
+      - "8005:8005"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  code_architect:
+    build:
+      context: ./services/code_architect
+    ports:
+      - "8002:8002"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  developer_agent:
+    build:
+      context: ./services/developer_agent
+    ports:
+      - "8003:8003"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  memory_agent:
+    build:
+      context: ./services/memory_agent
+    ports:
+      - "8009:8009"
+    volumes:
+      - ./memory_logs:/app/logs
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  agent_manager:
+    build:
+      context: ./services/agent_manager
+    ports:
+      - "8001:8001"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
