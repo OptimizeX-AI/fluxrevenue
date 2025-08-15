@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from qdrant_client import QdrantClient
 
 # Local imports with new structure
-from .planning_model import BasicPlanner
+from .semantic_planner import SemanticPlanner
 from .models import Base, Project
 from .core.config import setup_logging
 from .core.exceptions import (
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # --- Redis & Qdrant Setup ---
 redis_client = redis.Redis(host=os.getenv("REDIS_HOST", "localhost"), port=int(os.getenv("REDIS_PORT", 6379)), db=0)
 qdrant_client = QdrantClient(host=os.getenv("QDRANT_HOST"), port=os.getenv("QDRANT_PORT"))
-planner = BasicPlanner()
+planner = SemanticPlanner()
 
 # --- Database Setup ---
 # Provide default values for local testing; these are overridden by Docker environment variables.

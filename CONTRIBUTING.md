@@ -196,3 +196,12 @@ Each task object must be a dictionary with the following keys:
   }
 ]
 ```
+
+### 4.3. Contextual Task Descriptions
+
+As of Fase 2, the `agent_manager` uses a `SemanticPlanner`. This means that the `description` field for tasks will be more detailed and contextual than before.
+
+-   **Old Description**: "Develop Backend API"
+-   **New Description**: "Develop REST API endpoints for features: user authentication, payment processing"
+
+All specialized agents must be developed to handle this increased level of detail. Agents should not rely on generic descriptions but should be able to parse these more specific instructions to perform their tasks accurately. This is a key part of the coordinated evolution of the ecosystem.
