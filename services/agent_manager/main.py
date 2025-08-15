@@ -62,7 +62,7 @@ def redis_subscriber():
                 "plan": execution_plan,
                 "current_task_index": 0,
                 "status": "in_progress",
-                "artifacts": []
+                "artifacts": {}
             }
             log_to_memory("project_state_initialized", {"project_name": project_name})
 
