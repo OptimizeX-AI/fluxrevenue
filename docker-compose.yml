@@ -3,6 +3,27 @@ services:
     image: "redis:alpine"
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  postgres:
+    image: "postgres:13-alpine"
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  qdrant:
+    image: "qdrant/qdrant:latest"
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
 
   api_gateway:
     build:
@@ -12,8 +33,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   database_architect:
     build:
@@ -23,8 +53,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   devops_agent:
     build:
@@ -34,8 +73,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   security_agent:
     build:
@@ -45,8 +93,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   qa_agent:
     build:
@@ -56,8 +113,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   code_reviewer:
     build:
@@ -67,8 +133,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   code_architect:
     build:
@@ -78,8 +153,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   developer_agent:
     build:
@@ -89,8 +173,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   memory_agent:
     build:
@@ -102,8 +195,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
 
   agent_manager:
     build:
@@ -113,5 +215,19 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - POSTGRES_USER=jules
+      - POSTGRES_PASSWORD=jules
+      - POSTGRES_DB=jules_db
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
       - redis
+      - postgres
+      - qdrant
+
+volumes:
+  redis_data:
+  postgres_data:
+  qdrant_data:

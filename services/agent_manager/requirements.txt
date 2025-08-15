@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 redis
 spacy
+SQLAlchemy
+asyncpg
+qdrant-client
