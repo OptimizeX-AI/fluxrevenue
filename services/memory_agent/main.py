@@ -4,6 +4,9 @@ import threading
 import json
 from datetime import datetime
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from qdrant_client import QdrantClient
 
 app = FastAPI()
 LOG_DIR = "logs"
@@ -13,6 +16,18 @@ LOG_FILE = os.path.join(LOG_DIR, "project_memory.log")
 redis_host = os.getenv("REDIS_HOST", "localhost")
 redis_port = int(os.getenv("REDIS_PORT", 6379))
 redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
+
+# Database Connections
+# PostgreSQL
+DATABASE_URL = (
+    f"postgresql+asyncpg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
+    f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
+)
+engine = create_async_engine(DATABASE_URL, echo=False)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Qdrant
+qdrant_client = QdrantClient(host=os.getenv("QDRANT_HOST"), port=os.getenv("QDRANT_PORT"))
 
 def write_to_log(message: str):
     """Appends a message with a timestamp to the log file."""
