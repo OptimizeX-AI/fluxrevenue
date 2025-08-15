@@ -1,11 +1,6 @@
 import pytest
-import sys
-import os
 
-# Add the 'app' directory to the Python path to allow for absolute imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from app.semantic_planner import SemanticPlanner
+from services.agent_manager.app.semantic_planner import SemanticPlanner
 
 @pytest.fixture(scope="module")
 def planner():

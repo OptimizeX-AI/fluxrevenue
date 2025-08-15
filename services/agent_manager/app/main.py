@@ -13,10 +13,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from qdrant_client import QdrantClient
 
 # Local imports with new structure
-from .semantic_planner import SemanticPlanner
-from .models import Base, Project
-from .core.config import setup_logging
-from .core.exceptions import (
+from services.agent_manager.app.semantic_planner import SemanticPlanner
+from services.agent_manager.app.models import Base, Project
+from services.agent_manager.app.core.config import setup_logging
+from services.agent_manager.app.core.exceptions import (
     BaseAgentException,
     ProjectNotFoundError,
     TaskValidationError,
