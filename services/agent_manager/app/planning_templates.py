@@ -26,15 +26,21 @@ API_ONLY_TEMPLATE = [
     },
     {
         "task_id": 3,
-        "agent": "qa_agent",
-        "description": "Write integration tests for the API endpoints",
+        "agent": "code_reviewer",
+        "description": "Perform static analysis and code review on the generated API code",
         "depends_on": [2]
     },
     {
         "task_id": 4,
+        "agent": "qa_agent",
+        "description": "Write integration tests for the API endpoints",
+        "depends_on": [3]
+    },
+    {
+        "task_id": 5,
         "agent": "devops_agent",
         "description": "Set up CI/CD pipeline for automated API deployment",
-        "depends_on": [3]
+        "depends_on": [4]
     }
 ]
 
@@ -60,15 +66,21 @@ FULL_STACK_TEMPLATE = [
     },
     {
         "task_id": 4,
-        "agent": "qa_agent",
-        "description": "Write E2E tests covering both frontend and backend",
-        "depends_on": [3]
+        "agent": "code_reviewer",
+        "description": "Perform static analysis and review on all generated source code",
+        "depends_on": [2, 3] # Depends on both backend and frontend code
     },
     {
         "task_id": 5,
+        "agent": "qa_agent",
+        "description": "Write E2E tests covering both frontend and backend",
+        "depends_on": [4]
+    },
+    {
+        "task_id": 6,
         "agent": "devops_agent",
         "description": "Set up CI/CD pipeline for full-stack application deployment",
-        "depends_on": [4]
+        "depends_on": [5]
     }
 ]
 
