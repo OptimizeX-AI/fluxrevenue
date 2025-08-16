@@ -1,6 +1,8 @@
 fastapi
 uvicorn[standard]
 redis
-SQLAlchemy
-asyncpg
-qdrant-client
+python-json-logger
+
+# Testing dependencies
+pytest
+pytest-asyncio
