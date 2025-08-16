@@ -186,6 +186,20 @@ async def handle_task_completion_notification(notification_data: dict):
             if len(completed_ids) == len(plan):
                 project.status = 'completed'
                 logger.info("Project completed successfully: all tasks are done.", extra={"props": {"project_id": project.id}})
+
+                # Signal that the project is ready for export by writing to a log file
+                try:
+                    final_artifact = state.get("artifacts", {}).get(str(completed_task_id), [{}])[0]
+                    if final_artifact.get("type") == "project_archive":
+                        export_info = {
+                            "project_name": project.name,
+                            "archive_path": final_artifact.get("path")
+                        }
+                        with open("workspace/pending_exports.log", "a") as f:
+                            f.write(json.dumps(export_info) + "\n")
+                        logger.info("Project marked for export.", extra={"props": export_info})
+                except Exception as e:
+                    logger.error("Failed to write to export log.", exc_info=True)
             else:
                 project.status = 'in_progress'
                 if not newly_dispatchable_tasks:
