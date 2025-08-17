@@ -32,15 +32,21 @@ API_ONLY_TEMPLATE = [
     },
     {
         "task_id": 4,
-        "agent": "qa_agent",
-        "description": "Write integration tests for the API endpoints",
-        "depends_on": [3]
+        "agent": "security_agent",
+        "description": "Perform static security analysis (SAST) on the generated API code",
+        "depends_on": [2]
     },
     {
         "task_id": 5,
+        "agent": "qa_agent",
+        "description": "Write integration tests for the API endpoints",
+        "depends_on": [3, 4]
+    },
+    {
+        "task_id": 6,
         "agent": "devops_agent",
         "description": "Set up CI/CD pipeline for automated API deployment",
-        "depends_on": [4]
+        "depends_on": [5]
     }
 ]
 
@@ -62,25 +68,31 @@ FULL_STACK_TEMPLATE = [
         "task_id": 3,
         "agent": "developer_agent",
         "description": "Develop Frontend UI components using {technologies} to interact with the API",
-        "depends_on": [2] # Frontend depends on the API contract
+        "depends_on": [2]
     },
     {
         "task_id": 4,
         "agent": "code_reviewer",
         "description": "Perform static analysis and review on all generated source code",
-        "depends_on": [2, 3] # Depends on both backend and frontend code
+        "depends_on": [2, 3]
     },
     {
         "task_id": 5,
-        "agent": "qa_agent",
-        "description": "Write E2E tests covering both frontend and backend",
-        "depends_on": [4]
+        "agent": "security_agent",
+        "description": "Perform static security analysis (SAST) on all generated source code",
+        "depends_on": [2, 3]
     },
     {
         "task_id": 6,
+        "agent": "qa_agent",
+        "description": "Write E2E tests covering both frontend and backend",
+        "depends_on": [4, 5]
+    },
+    {
+        "task_id": 7,
         "agent": "devops_agent",
         "description": "Set up CI/CD pipeline for full-stack application deployment",
-        "depends_on": [5]
+        "depends_on": [6]
     }
 ]
 
