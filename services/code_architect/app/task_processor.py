@@ -1,9 +1,8 @@
-import asyncio
 import json
 import logging
-
 from services.code_architect.app.core.exceptions import TaskValidationError
 from services.code_architect.app.architecture_generator import generate_architecture_document
+from services.code_architect.app.memory.reporter import report_to_memory
 
 logger = logging.getLogger(__name__)
 
@@ -18,20 +17,15 @@ def _make_architectural_decisions(requirements: str) -> dict:
         "database_type": "postgresql",
         "frontend_framework": "none"
     }
-
     req_lower = requirements.lower()
-
     if "react" in req_lower:
         decisions["frontend_framework"] = "react"
     elif "vue" in req_lower:
         decisions["frontend_framework"] = "vue"
     elif "angular" in req_lower:
         decisions["frontend_framework"] = "angular"
-
     if "django" in req_lower:
         decisions["backend_framework"] = "django"
-
-    logger.info("Made architectural decisions.", extra={"props": decisions})
     return decisions
 
 async def process_architecture_task(task_data: dict, redis_client):
@@ -45,17 +39,19 @@ async def process_architecture_task(task_data: dict, redis_client):
     if not all([task_id, project_name, requirements]):
         raise TaskValidationError("Task data is missing required fields.", details=task_data)
 
-    logger.info("Processing architecture task.", extra={"props": {"task_id": task_id}})
+    await report_to_memory(redis_client, project_name, "code_architect", "task_started", {"task_id": task_id, "description": task_data.get("description")})
 
     try:
-        # 1. Make decisions based on requirements
         decisions = _make_architectural_decisions(requirements)
 
-        # 2. Generate the architecture document artifact
+        # Report each decision to memory
+        for key, value in decisions.items():
+            await report_to_memory(redis_client, project_name, "code_architect", "decision_made", {"key": key, "value": value})
+
         artifact_path = generate_architecture_document(project_name, decisions)
         generated_artifacts = [{"type": "architecture_document", "path": artifact_path, "decisions": decisions}]
+        await report_to_memory(redis_client, project_name, "code_architect", "artifact_generated", {"path": artifact_path})
 
-        # 3. Notify the manager of successful completion
         completion_message = {
             "task_id": task_id,
             "project_name": project_name,
@@ -64,10 +60,11 @@ async def process_architecture_task(task_data: dict, redis_client):
             "artifacts": generated_artifacts
         }
         await redis_client.publish("manager_notifications", json.dumps(completion_message))
-        logger.info("Successfully processed architecture task.", extra={"props": {"task_id": task_id}})
+        await report_to_memory(redis_client, project_name, "code_architect", "task_completed", {"task_id": task_id})
 
     except Exception as e:
         logger.error(f"An error occurred during architecture task processing for task {task_id}.", exc_info=True)
+        await report_to_memory(redis_client, project_name, "code_architect", "task_failed", {"task_id": task_id, "error": str(e)})
         failure_message = {
             "task_id": task_id,
             "project_name": project_name,

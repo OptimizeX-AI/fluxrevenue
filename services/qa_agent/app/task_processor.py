@@ -1,11 +1,11 @@
-import asyncio
 import json
 import logging
-
-from .core.exceptions import TaskValidationError, ArtifactError
-from .test_generator import generate_pytest_file
+from services.qa_agent.app.core.exceptions import TaskValidationError, ArtifactError
+from services.qa_agent.app.test_generator import generate_pytest_file
+from services.qa_agent.app.memory.reporter import report_to_memory
 
 logger = logging.getLogger(__name__)
+
 
 def _find_source_code_artifact_path(artifacts: list) -> str:
     """
@@ -13,10 +13,8 @@ def _find_source_code_artifact_path(artifacts: list) -> str:
     """
     if not artifacts:
         return None
-    # A simple strategy: find the first artifact of type 'source_code'.
-    # A more advanced agent might look for specific file names or metadata.
     for artifact in artifacts:
-        if artifact.get("type") == "source_code" and artifact.get("path"):
+        if isinstance(artifact, dict) and artifact.get("type") == "source_code" and artifact.get("path"):
             logger.info(f"Found source code artifact to test.", extra={"props": {"path": artifact.get("path")}})
             return artifact.get("path")
     return None
@@ -33,18 +31,20 @@ async def process_qa_task(task_data: dict, redis_client):
     if not all([task_id, project_name]):
         raise TaskValidationError("Task data is missing required fields.", details=task_data)
 
-    logger.info("Processing QA task.", extra={"props": {"task_id": task_id}})
+    await report_to_memory(redis_client, project_name, "qa_agent", "task_started", {"task_id": task_id, "description": task_data.get("description")})
 
     try:
         source_path = _find_source_code_artifact_path(context_artifacts)
         if not source_path:
             raise ArtifactError("No valid source code artifact found in task context to generate tests for.")
 
-        # 1. Generate the test file artifact
+        await report_to_memory(redis_client, project_name, "qa_agent", "action_taken", {"action_type": "test_generation", "source_artifact": source_path})
+
         test_file_path = generate_pytest_file(project_name, source_path)
         generated_artifacts = [{"type": "test_suite", "path": test_file_path}]
+        await report_to_memory(redis_client, project_name, "qa_agent", "artifact_generated", {"path": test_file_path})
 
-        # 2. Notify the manager of successful completion
+        # Notify the manager of successful completion
         completion_message = {
             "task_id": task_id,
             "project_name": project_name,
@@ -53,10 +53,12 @@ async def process_qa_task(task_data: dict, redis_client):
             "artifacts": generated_artifacts
         }
         await redis_client.publish("manager_notifications", json.dumps(completion_message))
-        logger.info("Successfully processed QA task and sent completion notification.", extra={"props": {"task_id": task_id}})
+        await report_to_memory(redis_client, project_name, "qa_agent", "task_completed", {"task_id": task_id})
 
     except Exception as e:
         logger.error(f"An error occurred during QA task processing for task {task_id}.", exc_info=True)
+        await report_to_memory(redis_client, project_name, "qa_agent", "task_failed", {"task_id": task_id, "error": str(e)})
+
         failure_message = {
             "task_id": task_id,
             "project_name": project_name,
