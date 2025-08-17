@@ -33,6 +33,8 @@ def analyze_code_for_vulnerabilities(source_code_path: str) -> dict:
     report = {
         "file_path": source_code_path,
         "vulnerabilities_found": 0,
+        "status": "PENDING",
+        "summary": "",
         "details": []
     }
 
@@ -49,7 +51,21 @@ def analyze_code_for_vulnerabilities(source_code_path: str) -> dict:
                         report["details"].append(issue)
                         report["vulnerabilities_found"] += 1
 
-        logger.info("Security analysis complete.", extra={"props": {"vulnerabilities_found": report["vulnerabilities_found"]}})
+        # Determine the final status and summary based on the findings
+        if report["vulnerabilities_found"] > 0:
+            report["status"] = "REJECTED"
+            report["summary"] = f"Security analysis found {report['vulnerabilities_found']} potential vulnerabilities."
+        else:
+            report["status"] = "APPROVED"
+            report["summary"] = "Security analysis passed. No vulnerabilities found."
+
+        logger.info(
+            "Security analysis complete.",
+            extra={"props": {
+                "vulnerabilities_found": report["vulnerabilities_found"],
+                "status": report["status"]
+            }}
+        )
         return report
 
     except ArtifactError as e:

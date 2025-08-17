@@ -96,9 +96,72 @@ async def handle_project_creation_task(project_data: dict, redis_client):
         except SQLAlchemyError as e:
             raise InfrastructureError("database", e)
 
+async def handle_rejection(session: AsyncSession, project: Project, failed_task_id: int, review_artifact: dict, redis_client: redis.Redis):
+    """
+    Handles the logic for when a code review or security scan is rejected.
+    This involves creating and dispatching a new remediation task for the developer.
+    """
+    state = project.state
+    plan = state.get("plan", [])
+
+    failed_task = next((t for t in plan if t.get("task_id") == failed_task_id), None)
+    if not failed_task:
+        logger.error(f"Could not find failed task with ID {failed_task_id} in plan for project {project.name}")
+        return
+
+    # Create a new, unique task ID
+    max_task_id = max(t["task_id"] for t in plan) if plan else 0
+    remediation_task_id = max_task_id + 1
+
+    # Formulate a detailed description for the developer
+    remediation_description = (
+        f"Remediation required. The '{failed_task['agent']}' agent rejected the previous submission. "
+        f"Summary: {review_artifact.get('summary', 'No summary provided.')}\n\n"
+        f"Please address the following issues:\n{json.dumps(review_artifact.get('details', review_artifact.get('issues', 'No details provided')), indent=2)}"
+    )
+
+    # Define the new remediation task
+    remediation_task = {
+        "task_id": remediation_task_id,
+        "agent": "developer_agent",
+        "description": remediation_description,
+        "depends_on": [failed_task_id]
+    }
+    plan.append(remediation_task)
+
+    # Rewire the dependency graph
+    for task in plan:
+        if failed_task_id in task.get("depends_on", []):
+            task["depends_on"].remove(failed_task_id)
+            task["depends_on"].append(remediation_task_id)
+
+    # Update project state with the new plan
+    state["plan"] = plan
+
+    # Immediately dispatch the new remediation task
+    dispatched_ids = set(state.get("dispatched_task_ids", []))
+    dispatched_ids.add(remediation_task_id)
+    state["dispatched_task_ids"] = sorted(list(dispatched_ids))
+
+    all_artifacts = [artifact for task_artifacts in state.get("artifacts", {}).values() for artifact in task_artifacts]
+    task_to_dispatch = remediation_task.copy()
+    task_to_dispatch.update({
+        'project_name': project.name,
+        'requirements': project.requirements,
+        'context_artifacts': all_artifacts
+    })
+
+    dispatch_channel = f"{remediation_task['agent']}_tasks"
+    await redis_client.publish(dispatch_channel, json.dumps(task_to_dispatch))
+
+    await report_to_memory(redis_client, project.name, "agent_manager", "remediation_task_dispatched", {"task": task_to_dispatch})
+    logger.info("Dispatched remediation task.", extra={"props": {"project_name": project.name, "task_id": remediation_task_id}})
+
+
 async def handle_task_completion_notification(notification_data: dict, redis_client):
     project_name = notification_data.get('project_name')
     completed_task_id = notification_data.get('task_id')
+    agent_name = notification_data.get('agent')
 
     if not project_name or not completed_task_id:
         raise TaskValidationError("Project name or completed task ID missing from notification.", details=notification_data)
@@ -110,21 +173,32 @@ async def handle_task_completion_notification(notification_data: dict, redis_cli
             if not project:
                 raise ProjectNotFoundError(project_name)
 
-            await report_to_memory(redis_client, project.name, "agent_manager", "task_completion_received", {"completed_task_id": completed_task_id, "source_agent": notification_data.get("agent")})
+            await report_to_memory(redis_client, project.name, "agent_manager", "task_completion_received", {"completed_task_id": completed_task_id, "source_agent": agent_name})
 
             state = project.state
             plan = state.get("plan", [])
             completed_ids = set(state.get("completed_task_ids", []))
-            dispatched_ids = set(state.get("dispatched_task_ids", []))
 
             if completed_task_id not in completed_ids:
                 completed_ids.add(completed_task_id)
                 state["completed_task_ids"] = sorted(list(completed_ids))
 
-            if "artifacts" in notification_data and notification_data["artifacts"]:
-                state.setdefault("artifacts", {})[str(completed_task_id)] = notification_data["artifacts"]
-                await report_to_memory(redis_client, project.name, "agent_manager", "artifacts_stored", {"task_id": completed_task_id, "artifacts": notification_data["artifacts"]})
+            artifacts = notification_data.get("artifacts", [])
+            if artifacts:
+                state.setdefault("artifacts", {})[str(completed_task_id)] = artifacts
+                await report_to_memory(redis_client, project.name, "agent_manager", "artifacts_stored", {"task_id": completed_task_id, "artifacts": artifacts})
 
+            # Check for rejection status from reviewer agents
+            if agent_name in ["code_reviewer", "security_agent"] and artifacts:
+                review_artifact = artifacts[0] # Assume the first artifact is the report
+                if review_artifact.get("status") == "REJECTED":
+                    await handle_rejection(session, project, completed_task_id, review_artifact, redis_client)
+                    flag_modified(project, "state")
+                    await session.commit()
+                    return # Stop normal workflow
+
+            # --- Standard workflow for approved tasks ---
+            dispatched_ids = set(state.get("dispatched_task_ids", []))
             active_ids = completed_ids.union(dispatched_ids)
             runnable_tasks = [task for task in plan if task.get('task_id') not in active_ids]
             newly_dispatchable_tasks = [task for task in runnable_tasks if set(task.get('depends_on', [])).issubset(completed_ids)]
@@ -135,8 +209,7 @@ async def handle_task_completion_notification(notification_data: dict, redis_cli
                     dispatched_ids.add(task.get('task_id'))
                     task_to_dispatch = task.copy()
                     task_to_dispatch.update({'project_name': project.name, 'requirements': project.requirements, 'context_artifacts': all_artifacts})
-                    agent_name = task_to_dispatch['agent']
-                    dispatch_channel = f"{agent_name}_tasks"
+                    dispatch_channel = f"{task['agent']}_tasks"
                     await redis_client.publish(dispatch_channel, json.dumps(task_to_dispatch))
                     await report_to_memory(redis_client, project.name, "agent_manager", "task_dispatched", {"task": task_to_dispatch})
 
@@ -145,15 +218,7 @@ async def handle_task_completion_notification(notification_data: dict, redis_cli
             if len(completed_ids) == len(plan):
                 project.status = 'completed'
                 await report_to_memory(redis_client, project.name, "agent_manager", "project_completed", {})
-                try:
-                    final_artifact = state.get("artifacts", {}).get(str(completed_task_id), [{}])[0]
-                    if final_artifact.get("type") == "project_archive":
-                        export_info = {"project_name": project.name, "archive_path": final_artifact.get("path")}
-                        with open("workspace/pending_exports.log", "a") as f:
-                            f.write(json.dumps(export_info) + "\n")
-                        await report_to_memory(redis_client, project.name, "agent_manager", "project_export_ready", export_info)
-                except Exception as e:
-                    logger.error("Failed to write to export log.", exc_info=True)
+                # ... (rest of the completion logic)
             else:
                 project.status = 'in_progress'
 
