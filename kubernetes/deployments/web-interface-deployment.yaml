@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-interface-deployment
+  namespace: flux-prod
+  labels:
+    app: web-interface
+spec:
+  replicas: 2 # Start with 2 replicas for the user-facing service
+  selector:
+    matchLabels:
+      app: web-interface
+  template:
+    metadata:
+      labels:
+        app: web-interface
+    spec:
+      containers:
+      - name: web-interface
+        image: fluxrevenue/web_interface:latest # This image contains both the FastAPI backend and the built React frontend
+        ports:
+        - containerPort: 8000 # The port exposed by the container
+        env:
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: agent-secrets
+              key: JWT_SECRET
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: / # The root path should be served by the static files
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10

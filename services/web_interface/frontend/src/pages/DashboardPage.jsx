@@ -1,42 +1,48 @@
 import React, { useState, useEffect } from 'react';
+import { ChatInterface } from '../components/ChatBot/ChatInterface';
+import './DashboardPage.css'; // For the chat toggle button
 
 function DashboardPage() {
   const [overview, setOverview] = useState(null);
   const [realtimeMetrics, setRealtimeMetrics] = useState({});
   const [error, setError] = useState('');
+  const [isChatVisible, setIsChatVisible] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    // Fetch initial dashboard data
-    const fetchOverview = async () => {
-      const token = localStorage.getItem('accessToken');
-      if (!token) {
-        setError('No access token found. Please login.');
-        return;
-      }
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      setError('No access token found. Please login.');
+      return;
+    }
 
+    const authHeader = { 'Authorization': `Bearer ${token}` };
+
+    const fetchDashboardData = async () => {
       try {
-        const response = await fetch('/api/dashboard/overview', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setOverview(data);
-          setRealtimeMetrics(data.system_metrics); // Initialize with fetched metrics
-        } else {
-          if (response.status === 401) {
-            localStorage.removeItem('accessToken');
-            window.location.reload();
-          } else {
-            setError((await response.json()).detail || 'Failed to fetch data');
-          }
-        }
+        const response = await fetch('/api/dashboard/overview', { headers: authHeader });
+        if (!response.ok) throw new Error('Failed to fetch dashboard data');
+        const data = await response.json();
+        setOverview(data);
+        setRealtimeMetrics(data.system_metrics);
       } catch (err) {
-        setError('An error occurred while fetching data.');
+        setError(err.message);
       }
     };
 
-    fetchOverview();
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await fetch('/api/users/me', { headers: authHeader });
+        if (!response.ok) throw new Error('Failed to fetch user data');
+        const data = await response.json();
+        setCurrentUser(data);
+      } catch (err) {
+        setError(err.message);
+      }
+    };
+
+    fetchDashboardData();
+    fetchCurrentUser();
 
     // Establish WebSocket connection
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -75,7 +81,7 @@ function DashboardPage() {
   };
 
   if (error) return <p style={{ color: 'red' }}>{error}</p>;
-  if (!overview) return <p>Loading dashboard...</p>;
+  if (!overview || !currentUser) return <p>Loading dashboard...</p>;
 
   return (
     <div>
@@ -105,6 +111,17 @@ function DashboardPage() {
           <li key={index}>{activity}</li>
         ))}
       </ul>
+
+      <button className="chat-toggle-button" onClick={() => setIsChatVisible(!isChatVisible)}>
+        💬
+      </button>
+
+      {currentUser && (
+        <ChatInterface
+          userId={currentUser.user_id}
+          isVisible={isChatVisible}
+        />
+      )}
     </div>
   );
 }

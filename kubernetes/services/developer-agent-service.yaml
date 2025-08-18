@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: developer-agent-service
+  namespace: flux-prod
+spec:
+  selector:
+    app: developer-agent
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8003 # The port the container exposes (from docker-compose)
+  type: ClusterIP # Expose the service only within the cluster

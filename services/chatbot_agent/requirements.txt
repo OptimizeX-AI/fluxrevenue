@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pydantic
+redis
+nltk
+pytest
+pytest-asyncio
