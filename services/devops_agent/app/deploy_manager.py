@@ -1,61 +1,59 @@
 import logging
 from typing import Dict, Any
+import yaml
+
+# Import the new real deployer
+from .kubernetes_deployer import KubernetesDeployer
 
 logger = logging.getLogger(__name__)
 
-class DeployManager:
+class RealDeployManager:
     """
-    Manages the deployment of applications to various platforms (simulated).
+    Manages the deployment of applications to various real platforms.
     """
     def __init__(self):
+        # The manager now holds instances of the real deployers
         self.platforms = {
-            "aws": self._deploy_to_aws,
-            "kubernetes": self._deploy_to_kubernetes,
+            "kubernetes": KubernetesDeployer(),
+            # "aws": AWSDeployer(), # Future implementation
         }
-        logger.info("DeployManager initialized.")
+        logger.info("RealDeployManager initialized.")
 
-    def deploy_application(self, artifact_path: str, platform: str, config: Dict[str, Any]) -> Dict:
+    def deploy_application(self, platform: str, config: Dict[str, Any]) -> Dict:
         """
         Deploys an application artifact to the specified platform.
         """
-        deploy_function = self.platforms.get(platform.lower())
-        if not deploy_function:
+        platform_deployer = self.platforms.get(platform.lower())
+        if not platform_deployer:
             raise NotImplementedError(f"Deployment to platform '{platform}' is not supported.")
 
-        logger.info(f"Starting deployment of '{artifact_path}' to '{platform}'.")
-        return deploy_function(artifact_path, config)
+        logger.info(f"Starting deployment to '{platform}'.")
 
-    def _deploy_to_aws(self, artifact_path: str, config: Dict[str, Any]) -> Dict:
-        """(Placeholder) Simulates a deployment to AWS S3/EC2."""
-        s3_bucket = config.get("s3_bucket", "my-app-bucket")
-        ec2_instance = config.get("ec2_instance", "i-12345678")
+        # The logic is now specific to the platform
+        if platform.lower() == "kubernetes":
+            manifest_path = config.get("manifest_path")
+            if not manifest_path:
+                raise ValueError("Kubernetes deployment requires a 'manifest_path'.")
 
-        logger.info(f"SIMULATING: Uploading {artifact_path} to S3 bucket {s3_bucket}...")
-        logger.info(f"SIMULATING: Triggering deployment on EC2 instance {ec2_instance}...")
+            with open(manifest_path, 'r') as f:
+                manifest = yaml.safe_load(f)
 
-        return {
-            "status": "success",
-            "deployment_id": f"aws-deploy-{config.get('version', '1.0.0')}",
-            "url": f"http://{ec2_instance}.aws.com/app"
-        }
+            # Here you could dynamically change parts of the manifest, e.g., the image tag
+            # manifest['spec']['template']['spec']['containers'][0]['image'] = config.get('image_tag')
 
-    def _deploy_to_kubernetes(self, artifact_path: str, config: Dict[str, Any]) -> Dict:
-        """(Placeholder) Simulates a deployment to Kubernetes."""
-        namespace = config.get("namespace", "default")
-        deployment_name = config.get("deployment_name", "my-app")
+            return platform_deployer.apply_manifest(manifest, config.get("namespace", "default"))
 
-        logger.info(f"SIMULATING: Building Docker image from {artifact_path}...")
-        logger.info(f"SIMULATING: Pushing Docker image to registry...")
-        logger.info(f"SIMULATING: Applying Kubernetes deployment '{deployment_name}' in namespace '{namespace}'...")
+        else:
+            # Placeholder for other platforms like AWS
+            raise NotImplementedError(f"Deployment logic for '{platform}' not fully implemented.")
 
-        return {
-            "status": "success",
-            "deployment_id": f"k8s-deploy-{deployment_name}-{config.get('version', '1.0.0')}",
-            "url": f"http://{deployment_name}.{namespace}.svc.cluster.local"
-        }
 
-    def rollback_deployment(self, deployment_id: str) -> bool:
-        """(Placeholder) Simulates rolling back a deployment."""
-        logger.warning(f"SIMULATING: Rolling back deployment '{deployment_id}'...")
-        # In a real system, this would revert to the previous version on the platform.
-        return True
+    def rollback_deployment(self, platform: str, deployment_id: str, namespace: str = "default") -> bool:
+        """
+        Rolls back a deployment on a specific platform.
+        """
+        platform_deployer = self.platforms.get(platform.lower())
+        if not platform_deployer:
+            raise NotImplementedError(f"Rollback for platform '{platform}' is not supported.")
+
+        return platform_deployer.rollback_deployment(deployment_id, namespace)

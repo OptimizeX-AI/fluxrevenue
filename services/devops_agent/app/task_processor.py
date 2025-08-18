@@ -1,8 +1,9 @@
 import json
 import logging
+import os
 
-# Import the new deployment components
-from .deploy_manager import DeployManager
+# Import the new real deployment components
+from .deploy_manager import RealDeployManager
 from .post_deploy_monitor import PostDeployMonitor
 
 from .core.exceptions import TaskValidationError, ArtifactError
@@ -10,7 +11,7 @@ from message_broker.rabbitmq_client import RabbitMQClient
 
 logger = logging.getLogger(__name__)
 
-def _find_build_artifact(artifacts: list) -> str:
+def _find_build_artifact_path(artifacts: list) -> str:
     """Finds the path to the build artifact to be deployed."""
     for artifact in artifacts:
         if isinstance(artifact, dict) and artifact.get("type") == "build_artifact":
@@ -19,19 +20,19 @@ def _find_build_artifact(artifacts: list) -> str:
 
 def process_devops_task(task_data: dict, rabbitmq_client: RabbitMQClient):
     """
-    Processes a DevOps task, such as deploying an application.
+    Processes a DevOps task, such as deploying an application using real deployers.
     """
     task_id = task_data.get('task_id')
     project_name = task_data.get('project_name')
     context_artifacts = task_data.get('context_artifacts', [])
-    action = task_data.get('action', 'deploy') # Default action is deploy
+    action = task_data.get('action', 'deploy')
 
     if not all([task_id, project_name]):
         raise TaskValidationError("Task data is missing required fields.", details=task_data)
 
-    logger.info(f"Processing DevOps task '{action}' for task {task_id}.")
+    logger.info(f"Processing DevOps task '{action}' for task {task_id} using RealDeployManager.")
 
-    deploy_manager = DeployManager()
+    deploy_manager = RealDeployManager()
     monitor = PostDeployMonitor()
 
     final_artifacts = []
@@ -39,24 +40,27 @@ def process_devops_task(task_data: dict, rabbitmq_client: RabbitMQClient):
 
     try:
         if action == "deploy":
-            artifact_to_deploy = _find_build_artifact(context_artifacts)
-            if not artifact_to_deploy:
+            build_artifact_path = _find_build_artifact_path(context_artifacts)
+            if not build_artifact_path:
                 raise ArtifactError("No build artifact found to deploy.")
 
-            # For now, simulate deploying to kubernetes
-            deploy_config = {"deployment_name": project_name, "namespace": "production"}
-            deploy_result = deploy_manager.deploy_application(artifact_to_deploy, "kubernetes", deploy_config)
+            # For this PoC, we default to Kubernetes. A real task would specify the platform.
+            platform = "kubernetes"
+            deploy_config = {
+                "namespace": "production",
+                "manifest_path": os.path.join(os.path.dirname(__file__), 'deployment.yml'),
+                # In a real scenario, we'd pass the image tag from the build artifact
+                "image_tag": f"{project_name.lower()}:latest"
+            }
 
-            if deploy_result.get("status") != "success":
-                raise Exception(f"Deployment failed: {deploy_result.get('reason')}")
+            deploy_result = deploy_manager.deploy_application(platform, deploy_config)
 
-            # If deployment succeeds, start monitoring
-            deployment_id = deploy_result.get("deployment_id")
+            deployment_id = deploy_result.get("deployment_name")
             health_status = monitor.monitor_deployment(deployment_id)
 
             if health_status.get("status") != "healthy":
                 logger.error(f"Post-deployment check failed for {deployment_id}. Initiating rollback.")
-                deploy_manager.rollback_deployment(deployment_id)
+                deploy_manager.rollback_deployment(platform, deployment_id)
                 raise Exception(f"Deployment failed post-deploy checks: {health_status.get('reason')}")
 
             final_artifacts.append({"type": "deployment_receipt", **deploy_result})

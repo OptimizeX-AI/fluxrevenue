@@ -2,57 +2,67 @@ import unittest
 from unittest.mock import patch, MagicMock
 import os
 import sys
+import yaml
 
 # Add parent directory to path to allow imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from app.deploy_manager import DeployManager
-from app.post_deploy_monitor import PostDeployMonitor
+from app.deploy_manager import RealDeployManager
 
-class TestDeployment(unittest.TestCase):
+# We patch the kubernetes client to avoid needing a real cluster for tests
+@patch('app.kubernetes_deployer.client', MagicMock())
+@patch('app.kubernetes_deployer.config', MagicMock())
+class TestRealDeployment(unittest.TestCase):
 
     def setUp(self):
-        """Set up instances of the components for testing."""
-        self.deploy_manager = DeployManager()
-        self.monitor = PostDeployMonitor()
+        """Set up a new RealDeployManager for each test."""
+        self.deploy_manager = RealDeployManager()
 
-    def test_deploy_manager_kubernetes(self):
-        """Test that the deploy manager can call the correct simulated platform function."""
+        # Create a dummy manifest file for testing
+        self.manifest_path = "test_manifest.yml"
+        self.manifest_content = {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "test-app"}
+        }
+        with open(self.manifest_path, 'w') as f:
+            yaml.dump(self.manifest_content, f)
+
+    def tearDown(self):
+        """Clean up the dummy manifest file."""
+        if os.path.exists(self.manifest_path):
+            os.remove(self.manifest_path)
+
+    def test_deploy_to_kubernetes(self):
+        """
+        Test that the RealDeployManager correctly calls the kubernetes client
+        to apply a manifest.
+        """
         # Arrange
-        artifact_path = "/path/to/artifact.zip"
-        config = {"deployment_name": "my-app"}
+        # The mock for the k8s client is already set up by the class decorator
+        from app.kubernetes_deployer import client as k8s_client
+
+        # We need to mock the return value of the API call
+        mock_api = self.deploy_manager.platforms["kubernetes"].apps_v1
+        mock_api.create_namespaced_deployment.return_value = MagicMock(
+            metadata=MagicMock(name="test-app-deployment")
+        )
+        # Make the read call raise a 404 to trigger the create path
+        mock_api.read_namespaced_deployment.side_effect = k8s_client.ApiException(status=404)
+
+        config = {"manifest_path": self.manifest_path, "namespace": "test-ns"}
 
         # Act
-        result = self.deploy_manager.deploy_application(artifact_path, "kubernetes", config)
+        result = self.deploy_manager.deploy_application("kubernetes", config)
 
         # Assert
         self.assertEqual(result["status"], "success")
-        self.assertIn("k8s-deploy-my-app", result["deployment_id"])
-        self.assertIn("my-app.default.svc.cluster.local", result["url"])
-
-    @patch('app.deploy_manager.DeployManager.rollback_deployment')
-    def test_post_deploy_monitor_failure_triggers_rollback(self, mock_rollback):
-        """
-        This is a more conceptual test of how the task_processor would use these components.
-        We simulate the monitor returning an 'unhealthy' status and check if rollback is called.
-        """
-        # Arrange
-        deployment_id = "test-deploy-123"
-
-        # We patch the monitor's check to always fail for this test case
-        with patch.object(self.monitor, 'monitor_deployment', return_value={"status": "unhealthy"}):
-            # Act
-            health_status = self.monitor.monitor_deployment(deployment_id)
-
-            # Assert
-            self.assertEqual(health_status["status"], "unhealthy")
-
-            # In the real task processor, this condition would trigger the rollback
-            if health_status["status"] != "healthy":
-                self.deploy_manager.rollback_deployment(deployment_id)
-
-        # Verify that the rollback method was called
-        mock_rollback.assert_called_once_with(deployment_id)
+        self.assertEqual(result["deployment_name"], "test-app-deployment")
+        # Verify that create_namespaced_deployment was called with the correct manifest and namespace
+        mock_api.create_namespaced_deployment.assert_called_once_with(
+            body=self.manifest_content,
+            namespace="test-ns"
+        )
 
 
 if __name__ == '__main__':
