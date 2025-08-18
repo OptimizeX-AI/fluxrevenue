@@ -128,6 +128,16 @@ services:
       - redis
       - rabbitmq
 
+  nlp_engine:
+    build:
+      context: .
+      dockerfile: services/nlp_engine/Dockerfile
+    ports:
+      - "8015:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
   database_architect:
     build:
       context: ./services/database_architect

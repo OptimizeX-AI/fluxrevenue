@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+# spaCy is a powerful library for advanced NLP
+spacy
+# We can also add a transformer model from HuggingFace for SOTA performance
+# sentence-transformers
+
+# Testing dependencies
+pytest
+pytest-asyncio
