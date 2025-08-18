@@ -108,6 +108,16 @@ services:
       - rabbitmq
       - redis
 
+  domain_orchestrator:
+    build:
+      context: .
+      dockerfile: services/domain_orchestrator/Dockerfile
+    ports:
+      - "8013:8000"
+    depends_on:
+      - rabbitmq
+      - agent_registry # Depends on registry to find agents
+
   database_architect:
     build:
       context: ./services/database_architect
