@@ -1,105 +1,82 @@
-import pytest
-import pytest_asyncio
-import logging
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.future import select
+import unittest
+from unittest.mock import MagicMock, patch
 
-from services.memory_agent.app.models import Base, ProjectEvent, ProjectDecision
-from services.memory_agent.app.memory_processor import process_event
+# Add parent directory to path to allow imports
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Use an in-memory SQLite database for testing, which supports asyncio
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-engine = create_async_engine(TEST_DATABASE_URL)
-TestingSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+from app.memory_processor import process_event_for_memory
+from app.knowledge_graph import KnowledgeGraph
+from app.semantic_search import SemanticSearch
 
-@pytest_asyncio.fixture(scope="function")
-async def db_session():
-    """Creates a new database session for a test and handles setup/teardown."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+class TestMemoryProcessor(unittest.TestCase):
 
-    async with TestingSessionLocal() as session:
-        yield session
+    def setUp(self):
+        """Set up fresh mocks for each test."""
+        self.mock_kg = MagicMock(spec=KnowledgeGraph)
+        self.mock_search = MagicMock(spec=SemanticSearch)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    def test_process_plan_generated_event(self):
+        """Test that a 'plan_generated' event correctly updates memory components."""
+        # Arrange
+        event = {
+            "event_type": "plan_generated",
+            "project_name": "TestProject",
+            "source_agent": "agent_manager",
+            "data": {
+                "plan": [
+                    {"task_id": 1, "description": "First task"},
+                    {"task_id": 2, "description": "Second task"}
+                ]
+            }
+        }
 
-@pytest.mark.asyncio
-async def test_process_event_logs_generic_event(db_session: AsyncSession):
-    """Tests that a generic event is correctly logged to the ProjectEvent table."""
-    event_data = {
-        "project_name": "test_project_1",
-        "source_agent": "test_agent",
-        "event_type": "generic_event",
-        "data": {"info": "some data"}
-    }
-    await process_event(event_data, db_session)
+        # Act
+        process_event_for_memory(event, self.mock_kg, self.mock_search)
 
-    result = await db_session.execute(select(ProjectEvent))
-    events = result.scalars().all()
-    assert len(events) == 1
-    assert events[0].project_name == "test_project_1"
-    assert events[0].event_type == "generic_event"
-    assert events[0].data["info"] == "some data"
+        # Assert
+        # It should add project and agent entities
+        self.mock_kg.add_entity.assert_any_call("TestProject", "Project", {"name": "TestProject"})
+        self.mock_kg.add_entity.assert_any_call("agent_manager", "Agent", {"name": "agent_manager"})
 
-@pytest.mark.asyncio
-async def test_process_event_stores_decision(db_session: AsyncSession):
-    """Tests that a 'decision_made' event is also stored in the ProjectDecision table."""
-    event_data = {
-        "project_name": "test_project_2",
-        "source_agent": "code_architect",
-        "event_type": "decision_made",
-        "data": {"key": "backend_framework", "value": "fastapi"}
-    }
-    await process_event(event_data, db_session)
+        # It should index the plan for semantic search
+        self.mock_search.index_document.assert_called_once_with(
+            "TestProject_plan",
+            "Task 1: First task\nTask 2: Second task"
+        )
 
-    # Check that it was logged as an event
-    event_result = await db_session.execute(select(ProjectEvent))
-    assert len(event_result.scalars().all()) == 1
+        # It should add the plan to the knowledge graph
+        self.mock_kg.add_entity.assert_any_call("TestProject_plan", "ExecutionPlan", {"full_text": "Task 1: First task\nTask 2: Second task"})
+        self.mock_kg.add_relationship.assert_any_call("agent_manager", "TestProject_plan", "GENERATED")
+        self.mock_kg.add_relationship.assert_any_call("TestProject_plan", "TestProject", "PLAN_FOR")
 
-    # Check that it was also stored as a canonical decision
-    decision_result = await db_session.execute(select(ProjectDecision))
-    decisions = decision_result.scalars().all()
-    assert len(decisions) == 1
-    assert decisions[0].project_name == "test_project_2"
-    assert decisions[0].decision_key == "backend_framework"
-    assert decisions[0].decision_value == "fastapi"
+    def test_process_artifacts_stored_event(self):
+        """Test that an 'artifacts_stored' event correctly updates memory components."""
+        # Arrange
+        event = {
+            "event_type": "artifacts_stored",
+            "project_name": "TestProject",
+            "source_agent": "developer_agent",
+            "data": {
+                "task_id": 1,
+                "artifacts": [
+                    {"name": "app.py", "content": "print('hello')"}
+                ]
+            }
+        }
 
-@pytest.mark.asyncio
-async def test_coherence_check_logs_error_on_contradiction(db_session: AsyncSession, caplog):
-    """
-    Tests that the coherence check logs a high-severity error when an action
-    contradicts a previously stored decision.
-    """
-    project_name = "test_project_3"
-    # 1. An agent makes a decision
-    decision_event = {
-        "project_name": project_name,
-        "source_agent": "code_architect",
-        "event_type": "decision_made",
-        "data": {"key": "backend_framework", "value": "fastapi"}
-    }
-    await process_event(decision_event, db_session)
+        # Act
+        process_event_for_memory(event, self.mock_kg, self.mock_search)
 
-    # 2. Another agent takes a contradictory action
-    action_event = {
-        "project_name": project_name,
-        "source_agent": "developer_agent",
-        "event_type": "action_taken",
-        "data": {"framework_used": "django"}
-    }
+        # Assert
+        artifact_entity_id = "TestProject_artifact_app.py"
+        task_entity_id = "TestProject_task_1"
 
-    # Run the processing and capture logs at ERROR level
-    with caplog.at_level(logging.ERROR):
-        await process_event(action_event, db_session)
+        self.mock_kg.add_entity.assert_any_call(artifact_entity_id, "Artifact", {"name": "app.py", "content": "print('hello')"})
+        self.mock_search.index_document.assert_called_once_with(artifact_entity_id, "print('hello')")
+        self.mock_kg.add_relationship.assert_called_once_with(task_entity_id, artifact_entity_id, "PRODUCED")
 
-    # 3. Assert that a high-severity error was logged by inspecting the log records
-    error_record = next((r for r in caplog.records if r.levelname == 'ERROR' and 'COHERENCE ALERT' in r.message), None)
 
-    assert error_record is not None, "An error log for coherence alert should have been created."
-
-    # Check the structured properties of the log
-    props = getattr(error_record, 'props', {})
-    assert props.get('decision') == "backend_framework should be 'fastapi'"
-    assert props.get('action_taken') == "used framework 'django'"
+if __name__ == '__main__':
+    unittest.main()
