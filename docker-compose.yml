@@ -290,6 +290,34 @@ services:
       - agent_registry
       - memory_agent
 
+  git_agent:
+    build:
+      context: ./services/git_agent
+    ports:
+      - "8012:8012"
+    volumes:
+      - ./workspace:/app/workspace
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    depends_on:
+      - rabbitmq
+
+  ci_cd_orchestrator:
+    build:
+      context: ./services/ci_cd_orchestrator
+    ports:
+      - "8013:8013"
+    volumes:
+      - ./workspace:/app/workspace
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    depends_on:
+      - rabbitmq
+
 volumes:
   redis_data:
   postgres_data:
