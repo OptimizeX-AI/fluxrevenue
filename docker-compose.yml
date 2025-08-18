@@ -274,6 +274,22 @@ services:
       - redis
       - rabbitmq
 
+  project_orchestrator:
+    build:
+      context: ./services/project_orchestrator
+    ports:
+      - "8011:8011"
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+      - AGENT_REGISTRY_URL=http://agent_registry:8010
+      - MEMORY_AGENT_URL=http://memory_agent:8009
+    depends_on:
+      - rabbitmq
+      - agent_registry
+      - memory_agent
+
 volumes:
   redis_data:
   postgres_data:
