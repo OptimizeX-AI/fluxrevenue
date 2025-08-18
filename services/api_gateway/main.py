@@ -5,10 +5,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Any
 
-# Add parent directory to path to import tracing
+# Add parent directory to path to import shared services
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from tracing import setup_tracer
+from common.secure_input import SecureBaseModel # Import the new secure model
 
 # Opentelemetry instrumentation
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -25,20 +26,21 @@ MEMORY_AGENT_URL = os.getenv("MEMORY_AGENT_URL", "http://memory_agent:8009")
 
 
 # --- Pydantic Models ---
-class Project(BaseModel):
+# Inherit from SecureBaseModel to get automatic sanitization
+class Project(SecureBaseModel):
     name: str
     requirements: str
 
-class Agent(BaseModel):
+class Agent(SecureBaseModel):
     name: str
     version: str
     status: str
 
-class MemoryQuery(BaseModel):
+class MemoryQuery(SecureBaseModel):
     query: str
     k: int = 5
 
-class KnowledgeQuery(BaseModel):
+class KnowledgeQuery(SecureBaseModel):
     entity_id: str
     relationship_type: str = None
 

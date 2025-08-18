@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import time
+import random
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
@@ -22,7 +23,7 @@ AGENT_NAME = "developer_agent"
 AGENT_VERSION = "1.0.0"
 AGENT_CAPABILITIES = ["code_generation", "python", "javascript", "remediation"]
 AGENT_SUPPORTED_LANGUAGES = ["python", "javascript", "typescript", "html", "css"]
-HEARTBEAT_INTERVAL = 60
+HEARTBEAT_INTERVAL = 30 # Reduced for faster demo of health checking
 
 # --- Tracer and Logger Setup ---
 setup_tracer(AGENT_NAME)
@@ -55,17 +56,23 @@ def register_with_registry():
     logger.info(f"Sent registration request for {AGENT_NAME}.")
 
 def heartbeat_loop():
-    """Periodically sends heartbeat messages."""
+    """Periodically sends heartbeat messages with simulated performance metrics."""
     while not stop_heartbeat.is_set():
         try:
+            # Simulate performance metrics
+            performance_metrics = {
+                "cpu_load": round(random.uniform(0.1, 0.9), 2), # Simulate CPU load
+                "memory_usage": round(random.uniform(0.2, 0.8), 2) # Simulate memory usage %
+            }
+
             heartbeat_message = RabbitMQClient.create_message(
                 source_agent=AGENT_NAME,
                 target_agent="agent_registry",
                 task_type="heartbeat",
-                payload={}
+                payload={"performance_metrics": performance_metrics}
             )
             rabbitmq_client.publish_message("agent_heartbeats", heartbeat_message)
-            logger.debug(f"Sent heartbeat from {AGENT_NAME}.")
+            logger.debug(f"Sent heartbeat from {AGENT_NAME} with metrics: {performance_metrics}")
         except Exception as e:
             logger.error(f"Failed to send heartbeat: {e}", exc_info=True)
 
@@ -79,7 +86,7 @@ def task_consumer_callback(message: dict):
         task_data = message.get('payload')
         logger.info("Received new development task.", extra={"props": {"task_id": task_data.get("task_id")}})
 
-        asyncio.run(process_development_task(task_data, None))
+        asyncio.run(process_development_task(task_data, rabbitmq_client)) # Pass client
     except json.JSONDecodeError:
         logger.error("Failed to decode JSON from RabbitMQ message.", extra={"props": {"raw_message": message}})
     except BaseAgentException as e:

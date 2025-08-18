@@ -1,0 +1,19 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
+  receiver: 'log-default'
+
+receivers:
+- name: 'log-default'
+  webhook_configs:
+  - url: 'http://localhost:5001/' # This is a dummy receiver, we'll just log to file.
+    send_resolved: true
+
+# In a real setup, you would have email_configs, slack_configs, etc.
+# For this task, we will rely on viewing the alerts in Grafana.
+# The Alertmanager service itself is what's important.

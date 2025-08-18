@@ -2,7 +2,7 @@ import redis
 import json
 from datetime import datetime
 from typing import Dict, Optional, List
-from .models import AgentMetadata, AgentRegistration
+from .models import AgentMetadata, AgentRegistration, PerformanceMetrics
 
 class AgentRegistry:
     """
@@ -36,9 +36,10 @@ class AgentRegistry:
         self.redis_client.set(agent_key, agent_data.model_dump_json())
         return agent_data
 
-    def update_heartbeat(self, agent_name: str) -> Optional[AgentMetadata]:
+    def update_heartbeat(self, agent_name: str, payload: Dict) -> Optional[AgentMetadata]:
         """
-        Updates the heartbeat for a given agent, marking it as active.
+        Updates the heartbeat and performance metrics for a given agent.
+        If the agent's status was 'overloaded', this new heartbeat will reset it to 'active'.
         """
         agent_key = self._get_agent_key(agent_name)
         agent_json = self.redis_client.get(agent_key)
@@ -48,7 +49,16 @@ class AgentRegistry:
 
         agent_data = AgentMetadata.model_validate_json(agent_json)
         agent_data.last_heartbeat = datetime.utcnow()
-        agent_data.status = "active"
+
+        # Reset status to active on new heartbeat, the health checker will
+        # mark it as overloaded if necessary.
+        if agent_data.status != "inactive":
+            agent_data.status = "active"
+
+        # Update performance metrics from payload
+        if "performance_metrics" in payload:
+            # Pydantic will automatically validate and parse this dict into the PerformanceMetrics model
+            agent_data.performance_metrics = payload["performance_metrics"]
 
         self.redis_client.set(agent_key, agent_data.model_dump_json())
         return agent_data
@@ -78,7 +88,7 @@ class AgentRegistry:
 
     def set_agent_status(self, agent_name: str, status: str) -> Optional[AgentMetadata]:
         """
-        Sets the status of an agent (e.g., 'inactive', 'busy').
+        Sets the status of an agent (e.g., 'inactive', 'busy', 'overloaded').
         """
         agent_key = self._get_agent_key(agent_name)
         agent_json = self.redis_client.get(agent_key)

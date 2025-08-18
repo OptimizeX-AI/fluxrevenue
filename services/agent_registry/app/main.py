@@ -1,39 +1,46 @@
 import os
 import asyncio
 import logging
-import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), .., ..)))
-from tracing import setup_tracer
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from prometheus_fastapi_instrumentator import Instrumentator
 from typing import List
 
+# Add parent directory to path to import shared services
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from message_broker.rabbitmq_client import RabbitMQClient
+from tracing import setup_tracer
+
+# Local components
 from .models import AgentMetadata, AgentRegistration
 from .registry import AgentRegistry
 from .health_checker import HealthChecker
 
-# Assuming the message broker is in a shared services location
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-from message_broker.rabbitmq_client import RabbitMQClient
+# OpenTelemetry and Prometheus instrumentation
+from prometheus_fastapi_instrumentator import Instrumentator
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-# Basic logging setup
+# --- Agent Definition ---
+AGENT_NAME = "agent_registry"
+
+# --- Tracer and Logger Setup ---
+setup_tracer(AGENT_NAME)
+# In a real app, a shared config module would be better
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 # --- Globals ---
 agent_registry: AgentRegistry
 rabbitmq_client: RabbitMQClient
 health_checker: HealthChecker
 
+
+# --- Lifespan Management ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Agent Registry is starting up.")
+    logger.info(f"{AGENT_NAME} is starting up.")
 
-    # Initialize services
     global agent_registry, rabbitmq_client, health_checker
     agent_registry = AgentRegistry(
         redis_host=os.getenv("REDIS_HOST", "localhost"),
@@ -54,19 +61,22 @@ async def lifespan(app: FastAPI):
     loop.run_in_executor(None, lambda: rabbitmq_client.consume_messages('agent_heartbeats', handle_heartbeat))
     await health_checker.start()
 
-    logger.info("Background tasks started.")
+    logger.info("Background tasks started for Agent Registry.")
 
     yield
 
-    logger.info("Agent Registry is shutting down.")
-    rabbitmq_client.close()
+    logger.info(f"{AGENT_NAME} is shutting down.")
     await health_checker.stop()
+    rabbitmq_client.close()
 
 
-app = FastAPI(lifespan=lifespan, title="Agent Registry", version="1.0.0")
+# --- FastAPI App Initialization ---
+app = FastAPI(lifespan=lifespan, title=AGENT_NAME)
+Instrumentator().instrument(app).expose(app)
+FastAPIInstrumentor.instrument_app(app)
+
 
 # --- RabbitMQ Callbacks ---
-
 def handle_registration(message: dict):
     try:
         payload = message.get('payload')
@@ -79,28 +89,25 @@ def handle_registration(message: dict):
 def handle_heartbeat(message: dict):
     try:
         agent_name = message.get('source_agent')
+        payload = message.get('payload', {})
         if agent_name:
-            agent_registry.update_heartbeat(agent_name)
-            logger.debug(f"Heartbeat received from: {agent_name}")
+            agent_registry.update_heartbeat(agent_name, payload)
+            # logger.debug(f"Heartbeat received from: {agent_name}") # This can be too noisy
     except Exception as e:
         logger.error(f"Failed to process heartbeat message: {e}", exc_info=True)
 
 
 # --- API Endpoints ---
-
 @app.get("/health")
 def read_health():
-    """Health check endpoint."""
     return {"status": "ok"}
 
 @app.get("/agents", response_model=List[AgentMetadata])
 def list_agents():
-    """Lists all registered agents."""
     return agent_registry.list_agents()
 
 @app.get("/agents/{agent_name}", response_model=AgentMetadata)
 def get_agent(agent_name: str):
-    """Retrieves the metadata for a specific agent."""
     agent = agent_registry.get_agent(agent_name)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
