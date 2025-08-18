@@ -1,68 +1,89 @@
 import json
 import logging
-from services.devops_agent.app.core.exceptions import TaskValidationError, ArtifactError
-from services.devops_agent.app.packager import create_project_archive
-from services.devops_agent.app.memory.reporter import report_to_memory
+
+# Import the new deployment components
+from .deploy_manager import DeployManager
+from .post_deploy_monitor import PostDeployMonitor
+
+from .core.exceptions import TaskValidationError, ArtifactError
+from message_broker.rabbitmq_client import RabbitMQClient
 
 logger = logging.getLogger(__name__)
 
-
-def _collect_artifact_paths(artifacts: list) -> list:
-    """Collects all file paths from a list of artifact dictionaries."""
-    paths = []
-    if not artifacts:
-        return paths
+def _find_build_artifact(artifacts: list) -> str:
+    """Finds the path to the build artifact to be deployed."""
     for artifact in artifacts:
-        if isinstance(artifact, dict) and artifact.get("path"):
-            paths.append(artifact.get("path"))
-    logger.info(f"Collected {len(paths)} artifact paths to be packaged.")
-    return paths
+        if isinstance(artifact, dict) and artifact.get("type") == "build_artifact":
+            return artifact.get("path")
+    return None
 
-async def process_devops_task(task_data: dict, redis_client):
+def process_devops_task(task_data: dict, rabbitmq_client: RabbitMQClient):
     """
-    Processes a DevOps task by collecting all project artifacts and packaging them.
+    Processes a DevOps task, such as deploying an application.
     """
     task_id = task_data.get('task_id')
     project_name = task_data.get('project_name')
     context_artifacts = task_data.get('context_artifacts', [])
+    action = task_data.get('action', 'deploy') # Default action is deploy
 
     if not all([task_id, project_name]):
         raise TaskValidationError("Task data is missing required fields.", details=task_data)
 
-    await report_to_memory(redis_client, project_name, "devops_agent", "task_started", {"task_id": task_id, "description": task_data.get("description")})
+    logger.info(f"Processing DevOps task '{action}' for task {task_id}.")
+
+    deploy_manager = DeployManager()
+    monitor = PostDeployMonitor()
+
+    final_artifacts = []
+    status = "completed"
 
     try:
-        artifact_paths = _collect_artifact_paths(context_artifacts)
-        if not artifact_paths:
-            logger.warning("No file artifacts found in task context to package. An empty archive will be created.")
-            await report_to_memory(redis_client, project_name, "devops_agent", "action_taken", {"action_type": "packaging", "details": "No artifacts to package."})
+        if action == "deploy":
+            artifact_to_deploy = _find_build_artifact(context_artifacts)
+            if not artifact_to_deploy:
+                raise ArtifactError("No build artifact found to deploy.")
+
+            # For now, simulate deploying to kubernetes
+            deploy_config = {"deployment_name": project_name, "namespace": "production"}
+            deploy_result = deploy_manager.deploy_application(artifact_to_deploy, "kubernetes", deploy_config)
+
+            if deploy_result.get("status") != "success":
+                raise Exception(f"Deployment failed: {deploy_result.get('reason')}")
+
+            # If deployment succeeds, start monitoring
+            deployment_id = deploy_result.get("deployment_id")
+            health_status = monitor.monitor_deployment(deployment_id)
+
+            if health_status.get("status") != "healthy":
+                logger.error(f"Post-deployment check failed for {deployment_id}. Initiating rollback.")
+                deploy_manager.rollback_deployment(deployment_id)
+                raise Exception(f"Deployment failed post-deploy checks: {health_status.get('reason')}")
+
+            final_artifacts.append({"type": "deployment_receipt", **deploy_result})
+            logger.info(f"Successfully deployed and monitored {deployment_id}.")
         else:
-            await report_to_memory(redis_client, project_name, "devops_agent", "action_taken", {"action_type": "packaging", "file_count": len(artifact_paths)})
-
-        archive_path = create_project_archive(project_name, artifact_paths)
-        generated_artifacts = [{"type": "project_archive", "path": archive_path}]
-        await report_to_memory(redis_client, project_name, "devops_agent", "artifact_generated", {"path": archive_path})
-
-        # Notify the manager of successful completion
-        completion_message = {
-            "task_id": task_id,
-            "project_name": project_name,
-            "status": "completed",
-            "agent": "devops_agent",
-            "artifacts": generated_artifacts
-        }
-        await redis_client.publish("manager_notifications", json.dumps(completion_message))
-        await report_to_memory(redis_client, project_name, "devops_agent", "task_completed", {"task_id": task_id})
+            raise NotImplementedError(f"DevOps action '{action}' is not supported.")
 
     except Exception as e:
         logger.error(f"An error occurred during DevOps task processing for task {task_id}.", exc_info=True)
-        await report_to_memory(redis_client, project_name, "devops_agent", "task_failed", {"task_id": task_id, "error": str(e)})
+        status = "failed"
+        final_artifacts = [{"type": "error_report", "details": str(e)}]
 
-        failure_message = {
-            "task_id": task_id,
-            "project_name": project_name,
-            "status": "failed",
-            "agent": "devops_agent",
-            "details": f"An unexpected error occurred: {str(e)}"
-        }
-        await redis_client.publish("manager_notifications", json.dumps(failure_message))
+    # Send final notification to the orchestrator
+    completion_message = {
+        "task_id": task_id,
+        "project_id": project_name,
+        "status": status,
+        "agent": "devops_agent",
+        "artifacts": final_artifacts
+    }
+
+    reply_to_queue = task_data.get('reply_to_queue', 'orchestrator_notifications')
+    message = RabbitMQClient.create_message(
+        source_agent="devops_agent",
+        target_agent="project_orchestrator",
+        task_type="task_completion_notification",
+        payload=completion_message
+    )
+    rabbitmq_client.publish_message(reply_to_queue, message)
+    logger.info(f"Reported status '{status}' for DevOps task {task_id}.")
