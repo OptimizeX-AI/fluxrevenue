@@ -9,13 +9,15 @@ python-json-logger
 pika
 jsonschema
 prometheus-fastapi-instrumentator
-
-# Testing dependencies
-pytest
-pytest-asyncio
-prometheus-fastapi-instrumentator
 opentelemetry-api
 opentelemetry-sdk
 opentelemetry-exporter-otlp
 opentelemetry-instrumentation-fastapi
 opentelemetry-instrumentation-pika
+pybreaker
+tenacity
+httpx
+
+# Testing dependencies
+pytest
+pytest-asyncio

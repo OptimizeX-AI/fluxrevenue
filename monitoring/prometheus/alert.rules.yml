@@ -1,0 +1,29 @@
+groups:
+- name: agent_alerts
+  rules:
+  - alert: AgentDown
+    expr: up{job="agents"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Agent {{ $labels.instance }} is down."
+      description: "The Prometheus scrape target for agent {{ $labels.instance }} has been down for more than 1 minute."
+
+  - alert: AgentOverloaded
+    expr: am_agent_cpu_load > 0.85
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Agent {{ $labels.agent_name }} is overloaded."
+      description: "Agent {{ $labels.agent_name }} has had a CPU load of {{ $value }} for more than 2 minutes."
+
+  - alert: HighDecisionLatency
+    expr: histogram_quantile(0.95, sum(rate(agent_manager_task_prioritization_duration_seconds_bucket[5m])) by (le)) > 2
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High decision latency in Agent Manager."
+      description: "The 95th percentile for task prioritization duration is over 2 seconds."
