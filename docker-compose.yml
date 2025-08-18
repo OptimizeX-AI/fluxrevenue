@@ -219,6 +219,7 @@ services:
       - "8009:8009"
     volumes:
       - ./memory_logs:/app/logs
+      - ./data/learning_materials:/app/learning_materials
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
