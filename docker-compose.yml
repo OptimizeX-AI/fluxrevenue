@@ -71,6 +71,19 @@ services:
       - project_orchestrator
       - rabbitmq # For future event-driven updates
 
+  chatbot_agent:
+    build:
+      context: .
+      dockerfile: services/chatbot_agent/Dockerfile
+    ports:
+      - "8012:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+      - rabbitmq # For future event-driven knowledge
+
   database_architect:
     build:
       context: ./services/database_architect
