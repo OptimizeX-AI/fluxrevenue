@@ -105,15 +105,10 @@ class BaseAgent:
 # --- Placeholder Agent Implementations (for Factory) ---
 # ==============================================================================
 
-# This class now serves as a placeholder for agents not yet in their own modules
-class InfraAutomationAgent(BaseAgent):
-    def __init__(self, agent_id: str, **kwargs):
-        super().__init__(agent_id, "infrastructure_automation")
-    async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        return {"status": "completed", "result": "Provisioned infrastructure."}
-
 # --- Import real agent implementations ---
 from ....services.data_analyst_agent.agent import DataAnalystAgent
+from ....services.infra_automation_agent.agent import InfraAutomationAgent
+from ....services.support_specialist_agent.agent import SupportSpecialistAgent
 
 # ==============================================================================
 # --- Agent Factory ---
@@ -123,8 +118,9 @@ class AgentFactory:
     """A factory for creating specialized agent instances."""
     def __init__(self):
         self.agent_templates: Dict[str, type[BaseAgent]] = {
-            "data_analyst": DataAnalystAgent, # Real implementation
-            "infrastructure_automation": InfraAutomationAgent, # Placeholder
+            "data_analyst": DataAnalystAgent,
+            "infrastructure_automation": InfraAutomationAgent,
+            "support_specialist": SupportSpecialistAgent,
         }
 
     async def create_agent(self, agent_type: str, agent_id: str, **kwargs: Any) -> BaseAgent:

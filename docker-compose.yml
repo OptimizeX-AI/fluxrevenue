@@ -84,6 +84,30 @@ services:
       - redis
       - rabbitmq # For future event-driven knowledge
 
+  data_analyst_agent:
+    build:
+      context: .
+      dockerfile: services/data_analyst_agent/Dockerfile
+    depends_on:
+      - rabbitmq
+      - redis
+
+  infra_automation_agent:
+    build:
+      context: .
+      dockerfile: services/infra_automation_agent/Dockerfile
+    depends_on:
+      - rabbitmq
+      - redis
+
+  support_specialist_agent:
+    build:
+      context: .
+      dockerfile: services/support_specialist_agent/Dockerfile
+    depends_on:
+      - rabbitmq
+      - redis
+
   database_architect:
     build:
       context: ./services/database_architect

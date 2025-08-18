@@ -1,0 +1,3 @@
+# Dependencies for a real infrastructure automation agent
+python-terraform
+ansible-runner
