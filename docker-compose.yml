@@ -178,6 +178,16 @@ services:
       - redis
       - rabbitmq
 
+  consciousness:
+    build:
+      context: .
+      dockerfile: services/consciousness/Dockerfile
+    ports:
+      - "8020:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
   database_architect:
     build:
       context: ./services/database_architect

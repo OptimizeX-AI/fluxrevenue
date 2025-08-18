@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+# For self-monitoring of system resources
+psutil
+
+# Testing dependencies
+pytest
+pytest-asyncio
