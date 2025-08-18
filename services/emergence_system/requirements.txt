@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+# For analyzing the agent network as a graph
+networkx
+
+# Testing dependencies
+pytest
+pytest-asyncio

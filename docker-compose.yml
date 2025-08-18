@@ -168,6 +168,16 @@ services:
       - redis
       - rabbitmq
 
+  emergence_system:
+    build:
+      context: .
+      dockerfile: services/emergence_system/Dockerfile
+    ports:
+      - "8019:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
   database_architect:
     build:
       context: ./services/database_architect
