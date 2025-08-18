@@ -20,3 +20,10 @@ To enhance performance and reduce latency, the `agent_manager` incorporates seve
 
 -   **Component**: `performance/decision_cache.py`
 -   **Description**: The `DecisionEngine` now uses a `DecisionCache` to store the results of agent allocation decisions for specific task descriptions. For recurring or similar tasks, this allows the engine to retrieve the allocation decision from the cache almost instantly, bypassing the more expensive allocation logic. This caching is handled by the common `CacheManager`, which uses both a local in-memory cache and a distributed Redis cache.
+
+### Advanced Monitoring
+
+The `agent_manager` is equipped with advanced monitoring tools to ensure its health and performance can be observed in real-time.
+
+-   **Performance Profiling**: The `PriorityManager`'s `calculate_priority` method is wrapped with a `PerformanceProfiler`. This allows for detailed analysis of this critical function's performance, logging the most time-consuming parts of the calculation.
+-   **Resource Monitoring**: On startup, the service launches a background task that uses a `ResourceMonitor` to continuously collect and log key system metrics, including CPU, memory, and disk usage. This provides constant visibility into the resource consumption of the agent.

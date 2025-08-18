@@ -17,6 +17,7 @@ opentelemetry-instrumentation-pika
 pybreaker
 tenacity
 httpx
+psutil
 
 # Testing dependencies
 pytest

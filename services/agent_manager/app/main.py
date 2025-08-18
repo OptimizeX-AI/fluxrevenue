@@ -25,6 +25,9 @@ from services.agent_manager.app.core.config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
+# --- Monitoring ---
+from ...common.monitoring.resource_monitor import ResourceMonitor
+
 # --- DB and Service Clients ---
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -70,6 +73,16 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, lambda: rabbitmq_client.consume_messages('project_tasks', handle_project_creation_task))
     loop.run_in_executor(None, lambda: rabbitmq_client.consume_messages('manager_notifications', handle_task_completion_notification))
+
+    # Start the resource monitor background task
+    async def monitor_resources_task():
+        resource_monitor = ResourceMonitor(agent_name=AGENT_NAME)
+        while True:
+            resource_monitor.collect_and_log_metrics()
+            await asyncio.sleep(60)  # Log every 60 seconds
+
+    logger.info("Starting resource monitor background task.")
+    asyncio.create_task(monitor_resources_task())
 
     yield
 
