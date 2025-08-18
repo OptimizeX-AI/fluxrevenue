@@ -58,6 +58,19 @@ services:
       - qdrant
       - rabbitmq
 
+  web_interface:
+    build:
+      context: .
+      dockerfile: services/web_interface/Dockerfile
+    ports:
+      - "8080:8000"
+    environment:
+      - JWT_SECRET=a_very_secret_key_that_should_be_in_a_vault
+    depends_on:
+      - agent_registry
+      - project_orchestrator
+      - rabbitmq # For future event-driven updates
+
   database_architect:
     build:
       context: ./services/database_architect
