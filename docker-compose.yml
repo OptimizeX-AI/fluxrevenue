@@ -25,6 +25,17 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
   api_gateway:
     build:
       context: ./services/api_gateway
@@ -40,10 +51,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   database_architect:
     build:
@@ -60,10 +73,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   devops_agent:
     build:
@@ -80,10 +95,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   security_agent:
     build:
@@ -100,10 +117,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   qa_agent:
     build:
@@ -120,10 +139,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   code_reviewer:
     build:
@@ -140,10 +161,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   code_architect:
     build:
@@ -160,10 +183,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   developer_agent:
     build:
@@ -180,10 +205,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   memory_agent:
     build:
@@ -202,10 +229,12 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
 
   agent_manager:
     build:
@@ -222,12 +251,69 @@ services:
       - POSTGRES_PORT=5432
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       - redis
       - postgres
       - qdrant
+      - rabbitmq
+
+  agent_registry:
+    build:
+      context: ./services/agent_registry
+    ports:
+      - "8010:8010"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    depends_on:
+      - redis
+      - rabbitmq
 
 volumes:
   redis_data:
   postgres_data:
   qdrant_data:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning/:/etc/grafana/provisioning/
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./monitoring/otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "14250:14250" # Collector

@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'agents'
+    static_configs:
+      - targets:
+        - 'api_gateway:8000'
+        - 'agent_manager:8001'
+        - 'code_architect:8002'
+        - 'developer_agent:8003'
+        - 'qa_agent:8004'
+        - 'code_reviewer:8005'
+        - 'database_architect:8006'
+        - 'devops_agent:8007'
+        - 'security_agent:8008'
+        - 'memory_agent:8009'
+        - 'agent_registry:8010'
