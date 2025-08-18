@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+# PyTorch is the core dependency for the neural network models
+torch
+# For potential future model optimization and serving
+# onnx
+# onnxruntime
+
+# Testing dependencies
+pytest
+pytest-asyncio

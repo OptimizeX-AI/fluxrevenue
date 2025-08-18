@@ -118,6 +118,16 @@ services:
       - rabbitmq
       - agent_registry # Depends on registry to find agents
 
+  ml_engine:
+    build:
+      context: .
+      dockerfile: services/ml_engine/Dockerfile
+    ports:
+      - "8014:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
   database_architect:
     build:
       context: ./services/database_architect
