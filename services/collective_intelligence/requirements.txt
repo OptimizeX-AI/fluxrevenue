@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+
+# Testing dependencies
+pytest
+pytest-asyncio

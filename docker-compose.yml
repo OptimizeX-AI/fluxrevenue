@@ -158,6 +158,16 @@ services:
       - redis
       - rabbitmq
 
+  collective_intelligence:
+    build:
+      context: .
+      dockerfile: services/collective_intelligence/Dockerfile
+    ports:
+      - "8018:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
   database_architect:
     build:
       context: ./services/database_architect
