@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+# Numpy is useful for numerical operations, potentially in pheromone matrix calculations
+numpy
+
+# Testing dependencies
+pytest
+pytest-asyncio

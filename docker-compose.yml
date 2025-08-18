@@ -148,6 +148,16 @@ services:
       - redis
       - rabbitmq
 
+  swarm_intelligence:
+    build:
+      context: .
+      dockerfile: services/swarm_intelligence/Dockerfile
+    ports:
+      - "8017:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
   database_architect:
     build:
       context: ./services/database_architect
