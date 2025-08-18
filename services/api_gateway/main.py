@@ -1,36 +1,33 @@
 import os
 import redis
-from fastapi import FastAPI
+import httpx
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from qdrant_client import QdrantClient
+from typing import List, Any
 
-# Define the data model for a project
+# --- Configuration ---
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+AGENT_REGISTRY_URL = os.getenv("AGENT_REGISTRY_URL", "http://agent_registry:8010")
+
+# --- Pydantic Models ---
 class Project(BaseModel):
     name: str
     requirements: str
 
+class Agent(BaseModel):
+    # A simplified model for the gateway, the registry holds the full model
+    name: str
+    version: str
+    status: str
+
+# --- FastAPI App Initialization ---
 app = FastAPI()
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
+http_client = httpx.AsyncClient()
 
-# Connect to Redis
-# The Redis host is named 'redis' in docker-compose.yml
-redis_host = os.getenv("REDIS_HOST", "localhost")
-redis_port = int(os.getenv("REDIS_PORT", 6379))
-redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
 
-# Database Connections
-# PostgreSQL
-DATABASE_URL = (
-    f"postgresql+asyncpg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
-    f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
-)
-engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-# Qdrant
-qdrant_client = QdrantClient(host=os.getenv("QDRANT_HOST"), port=os.getenv("QDRANT_PORT"))
-
+# --- API Endpoints ---
 
 @app.get("/health")
 def read_health():
@@ -41,11 +38,39 @@ def read_health():
 def create_project(project: Project):
     """
     Receives project requirements and publishes them to a Redis channel.
+    NOTE: This will be migrated to RabbitMQ in a future step.
     """
-    # Convert the project data to a string to publish it
     message = project.model_dump_json()
-
-    # Publish the message to the 'project_tasks' channel
     redis_client.publish("project_tasks", message)
-
     return {"message": "Project received and queued for processing.", "project_name": project.name}
+
+
+# --- Agent Registry Endpoints ---
+
+@app.get("/api/v1/agents/list", response_model=List[Agent])
+async def list_registered_agents():
+    """
+    Lists all agents registered with the Agent Registry.
+    """
+    try:
+        response = await http_client.get(f"{AGENT_REGISTRY_URL}/agents")
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.json())
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Agent Registry is unavailable.")
+
+@app.get("/api/v1/agents/{agent_name}", response_model=Any) # Any, as the model is complex
+async def get_agent_details(agent_name: str):
+    """
+    Gets detailed information for a specific agent from the Agent Registry.
+    """
+    try:
+        response = await http_client.get(f"{AGENT_REGISTRY_URL}/agents/{agent_name}")
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.json())
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Agent Registry is unavailable.")

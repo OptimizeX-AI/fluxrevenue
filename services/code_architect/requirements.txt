@@ -2,6 +2,8 @@ fastapi
 uvicorn[standard]
 redis
 python-json-logger
+pika
+jsonschema
 
 # Testing dependencies
 pytest

@@ -1,13 +1,9 @@
 fastapi
 uvicorn[standard]
+pika
 redis
 python-json-logger
-SQLAlchemy
-asyncpg
-pika
-jsonschema
 
 # Testing dependencies
 pytest
-pytest-asyncio
-aiosqlite
+requests

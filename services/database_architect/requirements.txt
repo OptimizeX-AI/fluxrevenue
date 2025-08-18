@@ -3,6 +3,8 @@ uvicorn[standard]
 redis
 python-json-logger
 SQLAlchemy
+pika
+jsonschema
 
 # Testing dependencies
 pytest

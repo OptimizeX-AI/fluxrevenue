@@ -4,3 +4,4 @@ redis
 SQLAlchemy
 asyncpg
 qdrant-client
+httpx

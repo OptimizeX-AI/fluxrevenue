@@ -6,6 +6,8 @@ SQLAlchemy
 asyncpg
 qdrant-client
 python-json-logger
+pika
+jsonschema
 
 # Testing dependencies
 pytest
