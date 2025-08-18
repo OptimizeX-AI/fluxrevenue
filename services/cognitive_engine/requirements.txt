@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+# For graph-based reasoning and planning
+networkx
+
+# Testing dependencies
+pytest
+pytest-asyncio
