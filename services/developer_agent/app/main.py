@@ -7,25 +7,29 @@ import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-from services.developer_agent.app.task_processor import process_development_task
-from services.developer_agent.app.core.config import setup_logging
-from services.developer_agent.app.core.exceptions import BaseAgentException
-
-# Add shared services to path
+# Add parent directory to path to import shared services
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from message_broker.rabbitmq_client import RabbitMQClient
+from tracing import setup_tracer
 
-# Setup structured logging
-setup_logging()
-logger = logging.getLogger(__name__)
+# OpenTelemetry and Prometheus instrumentation
+from prometheus_fastapi_instrumentator import Instrumentator
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 # --- Agent Definition ---
 AGENT_NAME = "developer_agent"
 AGENT_VERSION = "1.0.0"
 AGENT_CAPABILITIES = ["code_generation", "python", "javascript", "remediation"]
 AGENT_SUPPORTED_LANGUAGES = ["python", "javascript", "typescript", "html", "css"]
-HEARTBEAT_INTERVAL = 60  # seconds
+HEARTBEAT_INTERVAL = 60
+
+# --- Tracer and Logger Setup ---
+setup_tracer(AGENT_NAME)
+from services.developer_agent.app.core.config import setup_logging
+setup_logging()
+logger = logging.getLogger(__name__)
+
 
 # --- Globals ---
 rabbitmq_client: RabbitMQClient
@@ -69,13 +73,13 @@ def heartbeat_loop():
 
 def task_consumer_callback(message: dict):
     """Callback to process tasks received from RabbitMQ."""
+    from services.developer_agent.app.task_processor import process_development_task
+    from services.developer_agent.app.core.exceptions import BaseAgentException
     try:
         task_data = message.get('payload')
         logger.info("Received new development task.", extra={"props": {"task_id": task_data.get("task_id")}})
 
-        # Since process_development_task is async, we need to run it in an event loop
-        # A more robust solution might use a shared event loop or an async callback library
-        asyncio.run(process_development_task(task_data, None)) # Passing None for redis_client for now
+        asyncio.run(process_development_task(task_data, None))
     except json.JSONDecodeError:
         logger.error("Failed to decode JSON from RabbitMQ message.", extra={"props": {"raw_message": message}})
     except BaseAgentException as e:
@@ -97,12 +101,10 @@ async def lifespan(app: FastAPI):
     )
     rabbitmq_client.connect()
 
-    # Register agent and start heartbeating
     register_with_registry()
     heartbeat_thread = threading.Thread(target=heartbeat_loop)
     heartbeat_thread.start()
 
-    # Start listening for tasks
     consumer_thread = threading.Thread(target=lambda: rabbitmq_client.consume_messages(f"{AGENT_NAME}_tasks", task_consumer_callback))
     consumer_thread.start()
 
@@ -112,10 +114,13 @@ async def lifespan(app: FastAPI):
     stop_heartbeat.set()
     heartbeat_thread.join()
     rabbitmq_client.close()
-    # Note: The consumer thread will block, a more graceful shutdown is needed for production
 
 
+# --- FastAPI App Initialization ---
 app = FastAPI(lifespan=lifespan)
+Instrumentator().instrument(app).expose(app)
+FastAPIInstrumentor.instrument_app(app)
+
 
 @app.get("/health")
 def read_health():

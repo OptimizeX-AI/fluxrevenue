@@ -4,6 +4,11 @@ import logging
 import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), .., ..)))
+from tracing import setup_tracer
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from prometheus_fastapi_instrumentator import Instrumentator
 from typing import List
 
 from .models import AgentMetadata, AgentRegistration

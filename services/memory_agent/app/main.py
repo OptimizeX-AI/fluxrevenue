@@ -6,6 +6,11 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), .., ..)))
+from tracing import setup_tracer
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from services.memory_agent.app.core.config import setup_logging
 from services.memory_agent.app.core.exceptions import BaseAgentException
@@ -22,6 +27,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 # Setup structured logging
+# --- Tracer Setup ---
+setup_tracer(os.path.basename(os.path.dirname(os.path.dirname(__file__))))
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -131,6 +139,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+FastAPIInstrumentor.instrument_app(app)
+Instrumentator().instrument(app).expose(app)
 
 @app.get("/health")
 def read_health():

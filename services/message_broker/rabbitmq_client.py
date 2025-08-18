@@ -7,10 +7,14 @@ from .message_broker import MessageBroker
 from .message_schema import MESSAGE_SCHEMA
 from jsonschema import validate
 
+# OpenTelemetry imports for context propagation
+from opentelemetry import trace, propagation
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
 class RabbitMQClient(MessageBroker):
     """
     RabbitMQ client for sending and receiving messages.
-    Implements retry and dead-letter queue mechanisms.
+    Implements retry, dead-letter queue, and OpenTelemetry context propagation.
     """
 
     def __init__(self, host='localhost', port=5672, username='user', password='password', max_retries=3, retry_delay=5):
@@ -22,6 +26,7 @@ class RabbitMQClient(MessageBroker):
         self.retry_delay = retry_delay
         self.connection = None
         self.channel = None
+        self.tracer = trace.get_tracer(__name__)
 
     def connect(self):
         """Connect to RabbitMQ, with retries."""
@@ -50,23 +55,21 @@ class RabbitMQClient(MessageBroker):
         dlx_name = f'{queue_name}_dlx'
         dlq_name = f'{queue_name}_dlq'
 
-        # Declare the dead-letter exchange and queue
         self.channel.exchange_declare(exchange=dlx_name, exchange_type='fanout')
         self.channel.queue_declare(queue=dlq_name, durable=True)
         self.channel.queue_bind(exchange=dlx_name, queue=dlq_name)
 
-        # Declare the main queue with dead-lettering configuration
         self.channel.queue_declare(
             queue=queue_name,
             durable=True,
             arguments={
                 'x-dead-letter-exchange': dlx_name,
-                'x-message-ttl': 60000  # 1 minute
+                'x-message-ttl': 60000
             }
         )
 
     def publish_message(self, queue_name, message, exchange_name='', routing_key=None):
-        """Publish a message to a specific queue."""
+        """Publish a message to a specific queue, injecting trace context."""
         if not self.channel:
             self.connect()
 
@@ -75,25 +78,33 @@ class RabbitMQClient(MessageBroker):
 
         self._declare_queue(queue_name)
 
-        try:
-            # Validate message against schema
-            validate(instance=message, schema=MESSAGE_SCHEMA)
+        with self.tracer.start_as_current_span(f"publish_to_{queue_name}") as span:
+            try:
+                validate(instance=message, schema=MESSAGE_SCHEMA)
 
-            self.channel.basic_publish(
-                exchange=exchange_name,
-                routing_key=routing_key,
-                body=json.dumps(message),
-                properties=pika.BasicProperties(
-                    delivery_mode=2,  # make message persistent
+                headers = {}
+                TraceContextTextMapPropagator().inject(carrier=headers)
+                span.set_attribute("messaging.system", "rabbitmq")
+                span.set_attribute("messaging.destination", queue_name)
+
+                self.channel.basic_publish(
+                    exchange=exchange_name,
+                    routing_key=routing_key,
+                    body=json.dumps(message),
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,
+                        headers=headers
+                    )
                 )
-            )
-            print(f"Message {message.get('message_id')} published to queue '{queue_name}'")
-        except Exception as e:
-            print(f"Failed to publish message: {e}")
-            # Optionally, implement a retry mechanism here for publishing
+                print(f"Message {message.get('message_id')} published to queue '{queue_name}'")
+            except Exception as e:
+                print(f"Failed to publish message: {e}")
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+
 
     def consume_messages(self, queue_name, callback):
-        """Consume messages from a specific queue."""
+        """Consume messages from a specific queue, extracting trace context."""
         if not self.channel:
             self.connect()
 
@@ -101,14 +112,24 @@ class RabbitMQClient(MessageBroker):
 
         def message_callback(ch, method, properties, body):
             message = json.loads(body)
-            try:
-                print(f"Received message {message.get('message_id')}")
-                callback(message)
-                ch.basic_ack(delivery_tag=method.delivery_tag)
-            except Exception as e:
-                print(f"Error processing message {message.get('message_id')}: {e}")
-                # Negative acknowledgement, requeue=False sends it to the DLQ
-                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+
+            # Extract trace context from headers
+            headers = properties.headers or {}
+            ctx = TraceContextTextMapPropagator().extract(carrier=headers)
+
+            with self.tracer.start_as_current_span(f"consume_from_{queue_name}", context=ctx) as span:
+                span.set_attribute("messaging.system", "rabbitmq")
+                span.set_attribute("messaging.source", queue_name)
+
+                try:
+                    print(f"Received message {message.get('message_id')}")
+                    callback(message)
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                except Exception as e:
+                    print(f"Error processing message {message.get('message_id')}: {e}")
+                    span.record_exception(e)
+                    span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
         self.channel.basic_consume(queue=queue_name, on_message_callback=message_callback)
         print(f"Waiting for messages in queue '{queue_name}'. To exit press CTRL+C")

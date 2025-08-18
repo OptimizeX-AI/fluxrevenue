@@ -4,11 +4,27 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Any
+from prometheus_fastapi_instrumentator import Instrumentator
+
+# Add parent directory to path to import tracing
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from tracing import setup_tracer
+
+# Opentelemetry instrumentation
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+# --- Tracer Setup ---
+# It's important to set up the tracer before instrumenting any library.
+setup_tracer("api_gateway")
+
 
 # --- Configuration ---
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 AGENT_REGISTRY_URL = os.getenv("AGENT_REGISTRY_URL", "http://agent_registry:8010")
+
 
 # --- Pydantic Models ---
 class Project(BaseModel):
@@ -21,8 +37,19 @@ class Agent(BaseModel):
     version: str
     status: str
 
+
 # --- FastAPI App Initialization ---
 app = FastAPI()
+
+# Instrument for Prometheus
+Instrumentator().instrument(app).expose(app)
+
+# Instrument for OpenTelemetry
+FastAPIInstrumentor.instrument_app(app)
+HTTPXClientInstrumentor().instrument()
+
+
+# --- Service Clients ---
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
 http_client = httpx.AsyncClient()
 
