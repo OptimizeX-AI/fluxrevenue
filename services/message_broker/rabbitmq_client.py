@@ -1,14 +1,14 @@
 import pika
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 from .message_broker import MessageBroker
 from .message_schema import MESSAGE_SCHEMA
 from jsonschema import validate
 
 # OpenTelemetry imports for context propagation
-from opentelemetry import trace, propagation
+from opentelemetry import trace
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 class RabbitMQClient(MessageBroker):
@@ -140,7 +140,7 @@ class RabbitMQClient(MessageBroker):
         """Create a message dictionary that conforms to the schema."""
         return {
             "message_id": str(uuid.uuid4()),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "source_agent": source_agent,
             "target_agent": target_agent,
             "task_type": task_type,

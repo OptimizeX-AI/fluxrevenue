@@ -2,13 +2,12 @@ import os
 import httpx
 from fastapi import FastAPI, HTTPException, Response
 from typing import List, Any, Dict
+from contextlib import asynccontextmanager
 
-# Add parent directory to path to import shared services
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from tracing import setup_tracer
-from common.secure_input import SecureBaseModel
-from message_broker.rabbitmq_client import RabbitMQClient
+# Use absolute imports now that 'services' is a package
+from services.tracing import setup_tracer
+from services.common.secure_input import SecureBaseModel
+from services.message_broker.rabbitmq_client import RabbitMQClient
 
 # Opentelemetry instrumentation
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -43,8 +42,29 @@ class KnowledgeQuery(SecureBaseModel):
     relationship_type: str = None
 
 
+# --- Service Clients ---
+http_client = httpx.AsyncClient()
+rabbitmq_client = RabbitMQClient(
+    host=os.getenv("RABBITMQ_HOST", "localhost"),
+    username=os.getenv("RABBITMQ_DEFAULT_USER", "user"),
+    password=os.getenv("RABBITMQ_DEFAULT_PASS", "password")
+)
+
+# --- App Lifecycle Events ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handles startup and shutdown events for the application."""
+    # Startup: Connect to RabbitMQ
+    print("Connecting to RabbitMQ...")
+    rabbitmq_client.connect()
+    yield
+    # Shutdown: Close connections
+    print("Closing connections...")
+    await http_client.aclose()
+    rabbitmq_client.close()
+
 # --- FastAPI App Initialization ---
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # Instrument for Prometheus and OpenTelemetry
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -53,14 +73,6 @@ FastAPIInstrumentor.instrument_app(app)
 HTTPXClientInstrumentor().instrument()
 
 
-# --- Service Clients ---
-http_client = httpx.AsyncClient()
-rabbitmq_client = RabbitMQClient(
-    host=os.getenv("RABBITMQ_HOST", "localhost"),
-    username=os.getenv("RABBITMQ_DEFAULT_USER", "user"),
-    password=os.getenv("RABBITMQ_DEFAULT_PASS", "password")
-)
-rabbitmq_client.connect()
 
 
 # --- API Endpoints ---
@@ -96,6 +108,6 @@ async def get_project_progress_report(project_id: str):
 # ... (Other endpoints remain the same)
 @app.get("/api/v1/agents/list", response_model=List[Agent])
 async def list_registered_agents():
-    # ...
+    # TODO: Implement this endpoint to proxy the request to the agent_registry service.
     pass
 # ... (and so on)
