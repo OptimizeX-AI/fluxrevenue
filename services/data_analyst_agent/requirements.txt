@@ -1,0 +1,4 @@
+# Dependencies for a real data analyst agent
+pandas
+numpy
+scikit-learn

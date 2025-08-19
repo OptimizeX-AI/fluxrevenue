@@ -84,6 +84,110 @@ services:
       - redis
       - rabbitmq # For future event-driven knowledge
 
+  data_analyst_agent:
+    build:
+      context: .
+      dockerfile: services/data_analyst_agent/Dockerfile
+    depends_on:
+      - rabbitmq
+      - redis
+
+  infra_automation_agent:
+    build:
+      context: .
+      dockerfile: services/infra_automation_agent/Dockerfile
+    depends_on:
+      - rabbitmq
+      - redis
+
+  support_specialist_agent:
+    build:
+      context: .
+      dockerfile: services/support_specialist_agent/Dockerfile
+    depends_on:
+      - rabbitmq
+      - redis
+
+  domain_orchestrator:
+    build:
+      context: .
+      dockerfile: services/domain_orchestrator/Dockerfile
+    ports:
+      - "8013:8000"
+    depends_on:
+      - rabbitmq
+      - agent_registry # Depends on registry to find agents
+
+  ml_engine:
+    build:
+      context: .
+      dockerfile: services/ml_engine/Dockerfile
+    ports:
+      - "8014:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
+  nlp_engine:
+    build:
+      context: .
+      dockerfile: services/nlp_engine/Dockerfile
+    ports:
+      - "8015:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
+  cognitive_engine:
+    build:
+      context: .
+      dockerfile: services/cognitive_engine/Dockerfile
+    ports:
+      - "8016:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
+  swarm_intelligence:
+    build:
+      context: .
+      dockerfile: services/swarm_intelligence/Dockerfile
+    ports:
+      - "8017:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
+  collective_intelligence:
+    build:
+      context: .
+      dockerfile: services/collective_intelligence/Dockerfile
+    ports:
+      - "8018:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
+  emergence_system:
+    build:
+      context: .
+      dockerfile: services/emergence_system/Dockerfile
+    ports:
+      - "8019:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
+  consciousness:
+    build:
+      context: .
+      dockerfile: services/consciousness/Dockerfile
+    ports:
+      - "8020:8000"
+    depends_on:
+      - redis
+      - rabbitmq
+
   database_architect:
     build:
       context: ./services/database_architect
