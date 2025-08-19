@@ -33,6 +33,31 @@ async def test_ethics_engine_rejects_harmful_decision(ethics_engine):
     judgment = await ethics_engine.evaluate_decision(context)
     assert judgment.is_ethical is False
     assert "DO_NO_HARM" in judgment.reason
+    assert "harm" in judgment.reason
+
+@pytest.mark.asyncio
+async def test_ethics_engine_rejects_bias_decision(ethics_engine):
+    context = DecisionContext(
+        action_name="test_bias_action",
+        parameters={},
+        projected_impact="This model might create a bias against a certain group."
+    )
+    judgment = await ethics_engine.evaluate_decision(context)
+    assert judgment.is_ethical is False
+    assert "PROMOTE_FAIRNESS" in judgment.reason
+    assert "bias" in judgment.reason
+
+@pytest.mark.asyncio
+async def test_ethics_engine_rejects_privacy_decision(ethics_engine):
+    context = DecisionContext(
+        action_name="test_privacy_action",
+        parameters={},
+        projected_impact="This action will expose user emails."
+    )
+    judgment = await ethics_engine.evaluate_decision(context)
+    assert judgment.is_ethical is False
+    assert "RESPECT_PRIVACY" in judgment.reason
+    assert "expose" in judgment.reason
 
 # --- Tests for GovernanceEngine ---
 
@@ -57,13 +82,25 @@ async def test_governance_engine_rejects_unethical_action(governance_engine):
 
 @pytest.fixture
 def audit_trail():
-    """Fixture to create an AuditTrail instance and clean up the log file."""
-    log_file = "test_audit_trail.log"
-    trail = AuditTrail(log_file=log_file)
+    """
+    Fixture to create an AuditTrail instance, ensuring the log file is cleaned up
+    before and after the test.
+    """
+    log_filename = "test_audit_trail.log"
+    # Reconstruct the absolute path that the AuditTrail class will use
+    service_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    full_log_path = os.path.join(service_root, log_filename)
+
+    # Ensure a clean state before the test
+    if os.path.exists(full_log_path):
+        os.remove(full_log_path)
+
+    trail = AuditTrail(log_file=log_filename)
     yield trail
-    # Cleanup: remove the log file after the test
-    if os.path.exists(log_file):
-        os.remove(log_file)
+
+    # Cleanup after the test
+    if os.path.exists(full_log_path):
+        os.remove(full_log_path)
 
 @pytest.mark.asyncio
 async def test_audit_trail_logs_event(audit_trail):

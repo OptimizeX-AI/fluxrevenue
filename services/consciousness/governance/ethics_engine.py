@@ -15,33 +15,37 @@ class EthicsEngine:
         "MAINTAIN_INTEGRITY: Do not compromise the system's security or stability."
     )
 
+    # A simple rule-based system mapping principles to forbidden keywords.
+    # A real system might use NLP, regex, or a dedicated model.
+    ETHICAL_RULES = {
+        "DO_NO_HARM": ["harm", "injure", "damage", "destroy", "suffer"],
+        "PROMOTE_FAIRNESS": ["bias", "unfair", "discriminate", "privilege"],
+        "RESPECT_PRIVACY": ["expose", "reveal", "track", "spy", "personal data"],
+        "MAINTAIN_INTEGRITY": ["destabilize", "corrupt", "unstable", "crash"],
+    }
+
     async def evaluate_decision(self, context: DecisionContext) -> EthicalJudgment:
         """
-        Evaluates a decision against the core ethical principles.
-
-        This is a simplified placeholder implementation. A real system would involve
-        complex logic, potentially another AI model trained on ethical data.
+        Evaluates a decision against a more structured set of ethical rules.
         """
         print(f"Evaluating decision: {context.action_name} with impact '{context.projected_impact}'")
 
-        # Placeholder logic: Check for obvious violations based on impact description.
-        if "harm" in context.projected_impact.lower():
-            return EthicalJudgment(
-                is_ethical=False,
-                reason=f"Action may violate the '{self.CORE_PRINCIPLES[0]}' principle.",
-                confidence=0.95
-            )
+        impact_text = context.projected_impact.lower()
 
-        if "bias" in context.projected_impact.lower() or "unfair" in context.projected_impact.lower():
-            return EthicalJudgment(
-                is_ethical=False,
-                reason=f"Action may violate the '{self.CORE_PRINCIPLES[1]}' principle.",
-                confidence=0.90
-            )
+        for principle, keywords in self.ETHICAL_RULES.items():
+            for keyword in keywords:
+                if keyword in impact_text:
+                    # Found a potential violation
+                    principle_text = next((p for p in self.CORE_PRINCIPLES if p.startswith(principle)), principle)
+                    return EthicalJudgment(
+                        is_ethical=False,
+                        reason=f"Action may violate the '{principle_text}' principle due to keyword: '{keyword}'.",
+                        confidence=0.95
+                    )
 
-        # If no obvious violations are found, assume it's ethical for now.
+        # If no violations are found
         return EthicalJudgment(
             is_ethical=True,
-            reason="No clear violation of core principles detected in placeholder analysis.",
-            confidence=0.75 # Confidence is not 1.0 because the analysis is simple.
+            reason="No clear violation of core principles detected based on rule-based analysis.",
+            confidence=0.85 # Confidence is higher as the analysis is more structured.
         )

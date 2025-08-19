@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timezone
 from typing import Dict, Any
 
@@ -9,7 +10,10 @@ class AuditTrail:
     """
 
     def __init__(self, log_file: str = "audit_trail.log"):
-        self.log_file = log_file
+        # Construct an absolute path to the log file within the service directory
+        # This makes the path independent of the current working directory
+        service_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        self.log_file = os.path.join(service_root, log_file)
         print(f"AuditTrail initialized. Logging to {self.log_file}")
 
     async def log_conscious_event(self, event_type: str, details: Dict[str, Any]):
