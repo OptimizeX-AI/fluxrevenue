@@ -36,3 +36,10 @@ class ConsciousnessState(BaseModel):
     emotions: Dict[str, float] # emotion -> intensity
     self_awareness: float
     timestamp: datetime = Field(default_factory=datetime.now)
+
+class PurposeStatement(BaseModel):
+    """Represents the autonomous purpose defined by the system."""
+    mission: str
+    long_term_plan: List[str]
+    ethical_guidelines: List[str]
+    success_metrics: List[str]
