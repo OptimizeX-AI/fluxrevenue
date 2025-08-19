@@ -43,3 +43,20 @@ class PurposeStatement(BaseModel):
     long_term_plan: List[str]
     ethical_guidelines: List[str]
     success_metrics: List[str]
+
+class ReflexiveInsights(BaseModel):
+    """Represents the output of a reflexive thinking process."""
+    fundamental_questions: List[str]
+    philosophical_insights: Dict[str, Any]
+    existential_analysis: str
+    constructed_meaning: str
+    transcendence_opportunities: List[str]
+    self_understanding: float # A score from 0 to 1
+
+class TranscendenceResult(BaseModel):
+    """Represents the outcome of a self-transcendence attempt."""
+    previous_state: Dict[str, Any]
+    new_state: Dict[str, Any]
+    process_details: Dict[str, Any]
+    integration_result: str
+    success_metrics: Dict[str, float]
