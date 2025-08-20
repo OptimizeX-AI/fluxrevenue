@@ -1,11 +1,12 @@
 import json
 import logging
 import os
+import re
 
 # Import the new testing framework components
-from .test_generator_factory import TestGeneratorFactory
+from .generator_factory import TestGeneratorFactory
 from .core.exceptions import TaskValidationError, ArtifactError
-from message_broker.rabbitmq_client import RabbitMQClient
+from services.message_broker.rabbitmq_client import RabbitMQClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,11 @@ def process_qa_task(task_data: dict, rabbitmq_client: RabbitMQClient):
 
     if not all([task_id, project_name, description]):
         raise TaskValidationError("Task data is missing required fields.", details=task_data)
+
+    # Sanitize and validate project_name before main try block
+    sane_project_name = re.sub(r'[^a-zA-Z0-9_-]', '', project_name)
+    if not sane_project_name:
+        raise TaskValidationError("Project name is invalid or empty after sanitization.", details={"project_name": project_name})
 
     logger.info(f"Processing QA task {task_id} with new framework.")
 
@@ -63,7 +69,7 @@ def process_qa_task(task_data: dict, rabbitmq_client: RabbitMQClient):
         test_code = generator.generate(code_artifact, test_spec)
 
         # 5. Save the generated test file
-        workspace_dir = f"workspace/{project_name.replace(' ', '_').lower()}/tests"
+        workspace_dir = f"workspace/{sane_project_name}/tests"
         os.makedirs(workspace_dir, exist_ok=True)
         test_file_path = os.path.join(workspace_dir, f"test_{test_type}_generated.py")
 

@@ -7,6 +7,9 @@ class CriticalAnalysis:
     """
     A generic class for agents to critically analyze their own output
     before considering a task complete.
+    # TODO: This is a generic base class. The QA agent should have its own
+    # specific rules, e.g., checking for test coverage metrics or linting
+    # the generated test code. The suggest_improvements method is also a placeholder.
     """
     def __init__(self, agent_name: str, agent_type: str):
         self.agent_name = agent_name

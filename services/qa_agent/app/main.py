@@ -7,11 +7,8 @@ import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-# Add parent directory to path to import shared services
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from message_broker.rabbitmq_client import RabbitMQClient
-from tracing import setup_tracer
+from services.message_broker.rabbitmq_client import RabbitMQClient
+from services.tracing import setup_tracer
 
 # OpenTelemetry and Prometheus instrumentation
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -26,7 +23,7 @@ HEARTBEAT_INTERVAL = 60
 
 # --- Tracer and Logger Setup ---
 setup_tracer(AGENT_NAME)
-from services.qa_agent.app.core.config import setup_logging
+from .core.config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -35,6 +32,7 @@ logger = logging.getLogger(__name__)
 rabbitmq_client: RabbitMQClient
 heartbeat_thread: threading.Thread
 stop_heartbeat = threading.Event()
+main_loop: asyncio.AbstractEventLoop
 
 
 def register_with_registry():
@@ -79,7 +77,15 @@ def task_consumer_callback(message: dict):
         task_data = message.get('payload')
         logger.info("Received new QA task.", extra={"props": {"task_id": task_data.get("task_id")}})
 
-        asyncio.run(process_qa_task(task_data, None)) # Passing None for redis_client
+        # The task processor itself is synchronous, but we call it from the loop
+        # to maintain a consistent pattern. If it becomes async, this will work.
+        # Note: The original call was asyncio.run(process_qa_task(...)), which is a bug.
+        # Since process_qa_task is not an async function, we can call it directly.
+        # However, to prepare for it becoming async, we can wrap it.
+        async def async_wrapper():
+            process_qa_task(task_data, rabbitmq_client) # Pass the real client
+
+        asyncio.run_coroutine_threadsafe(async_wrapper(), main_loop)
     except json.JSONDecodeError:
         logger.error("Failed to decode JSON from RabbitMQ message.", extra={"props": {"raw_message": message}})
     except BaseAgentException as e:
@@ -93,7 +99,8 @@ async def lifespan(app: FastAPI):
     """Lifespan manager to handle startup and shutdown events."""
     logger.info(f"{AGENT_NAME} is starting up.")
 
-    global rabbitmq_client, heartbeat_thread
+    global rabbitmq_client, heartbeat_thread, main_loop
+    main_loop = asyncio.get_running_loop()
     rabbitmq_client = RabbitMQClient(
         host=os.getenv("RABBITMQ_HOST", "localhost"),
         username=os.getenv("RABBITMQ_DEFAULT_USER", "user"),

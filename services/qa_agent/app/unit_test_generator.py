@@ -19,9 +19,12 @@ class AbstractTestGenerator(ABC):
         """
         pass
 
-class PythonUnit_test_generator(AbstractTestGenerator):
+class PythonUnitTestGenerator(AbstractTestGenerator):
     """
     Generates boilerplate unit tests for a Python function.
+    # TODO: This generator is very basic. A real implementation should parse
+    # the function's signature and type hints to generate more intelligent
+    # and diverse test cases (e.g., for different data types, edge cases).
     """
     def generate(self, code_artifact: Dict[str, Any], test_spec: Dict[str, Any]) -> str:
         """

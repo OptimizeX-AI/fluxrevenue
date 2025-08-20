@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from .unit_test_generator import AbstractTestGenerator, PythonUnit_test_generator
+from .unit_test_generator import AbstractTestGenerator, PythonUnitTestGenerator
 # Placeholders for future generators
 # from .integration_test_generator import PythonIntegrationTestGenerator
 # from .performance_test_generator import PythonPerformanceTestGenerator
@@ -11,11 +11,13 @@ logger = logging.getLogger(__name__)
 class TestGeneratorFactory:
     """
     A factory for creating test generator instances based on language and test type.
+    # TODO: This factory is incomplete. It should be expanded with generators
+    # for other languages (like Javascript) and other test types (integration, etc.).
     """
     def __init__(self):
         self._generators = {
             "python": {
-                "unit": PythonUnit_test_generator,
+                "unit": PythonUnitTestGenerator,
                 # "integration": PythonIntegrationTestGenerator, # Example for future
                 # "performance": PythonPerformanceTestGenerator, # Example for future
             },
