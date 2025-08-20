@@ -43,8 +43,11 @@ class FallbackHandler:
         (This would require querying the Agent Registry).
         """
         logger.info("Fallback: Attempting to find an alternative agent.")
-        # Placeholder: In a real implementation, this would query the agent_registry
-        # to find another agent with the required capabilities.
+        # TODO: Implement agent_registry query. This would involve:
+        # 1. Making an HTTP call to the agent_registry service.
+        # 2. Getting a list of agents with the 'required_capabilities'.
+        # 3. Filtering out the agent that just failed.
+        # 4. If a new agent is found, create a new task assigned to them.
         # For now, we'll just log the intent.
         return None # Returning None as we can't implement the logic yet
 

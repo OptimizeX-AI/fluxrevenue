@@ -1,24 +1,33 @@
-fastapi
-uvicorn[standard]
-redis
-spacy
-SQLAlchemy
-asyncpg
-qdrant-client
-python-json-logger
-pika
-jsonschema
-prometheus-fastapi-instrumentator
-opentelemetry-api
-opentelemetry-sdk
-opentelemetry-exporter-otlp
-opentelemetry-instrumentation-fastapi
-opentelemetry-instrumentation-pika
-pybreaker
-tenacity
-httpx
-psutil
+# Core
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+httpx==0.27.0
+psutil==7.0.0
 
-# Testing dependencies
-pytest
-pytest-asyncio
+# NLP
+spacy==3.8.7
+
+# Data and Messaging
+redis==6.4.0
+SQLAlchemy==2.0.43
+asyncpg==0.30.0
+qdrant-client==1.15.1
+pika==1.3.2
+jsonschema==4.22.0
+
+# Logging and Resilience
+python-json-logger==3.3.0
+pybreaker==1.4.0
+tenacity==9.1.2
+
+# Observability
+prometheus-fastapi-instrumentator==7.1.0
+opentelemetry-api==1.36.0
+opentelemetry-sdk==1.36.0
+opentelemetry-exporter-otlp==1.36.0
+opentelemetry-instrumentation-fastapi==0.57b0
+opentelemetry-instrumentation-pika==0.57b0
+
+# Testing
+pytest==8.4.1
+pytest-asyncio==1.1.0

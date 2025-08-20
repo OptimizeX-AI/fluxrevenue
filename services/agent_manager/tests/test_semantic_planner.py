@@ -1,6 +1,6 @@
 import pytest
 
-from services.agent_manager.app.semantic_planner import SemanticPlanner
+from ..app.semantic_planner import SemanticPlanner
 
 @pytest.fixture(scope="module")
 def planner():

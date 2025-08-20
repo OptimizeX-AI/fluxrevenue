@@ -1,4 +1,4 @@
-from ....common.performance.cache_manager import CacheManager
+from services.common.performance.cache_manager import CacheManager
 from typing import Optional, Dict, Any
 import hashlib
 

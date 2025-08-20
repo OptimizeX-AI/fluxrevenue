@@ -7,6 +7,11 @@ class LearningModule:
     """
     A placeholder for a module that would learn from task outcomes
     to improve future decision-making.
+    # TODO: A real implementation would be much more complex. It could involve:
+    # - Persisting the model data to a database.
+    # - Using a more sophisticated learning model (e.g., reinforcement learning).
+    # - Providing richer insights that the DecisionEngine can use to adjust
+    #   task allocation or prioritization strategies.
     """
     def __init__(self):
         # In a real system, this could be a path to a saved model file.

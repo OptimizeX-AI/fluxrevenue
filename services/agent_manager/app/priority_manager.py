@@ -1,6 +1,6 @@
 import logging
 from typing import Dict
-from ...common.monitoring.profiler import PerformanceProfiler
+from services.common.monitoring.profiler import PerformanceProfiler
 
 logger = logging.getLogger(__name__)
 

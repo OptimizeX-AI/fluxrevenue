@@ -1,7 +1,7 @@
 import logging
 import copy
-from services.agent_manager.app.core.nlp_extractor import NLPExtractor
-from services.agent_manager.app.planning_templates import PLAN_TEMPLATES
+from .core.nlp_extractor import NLPExtractor
+from .planning_templates import PLAN_TEMPLATES
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from .task_allocator import TaskAllocator
 from .priority_manager import PriorityManager
 from .fallback_handler import FallbackHandler
 from .learning_module import LearningModule
-from ..performance.decision_cache import DecisionCache
+from services.agent_manager.performance.decision_cache import DecisionCache
 
 logger = logging.getLogger(__name__)
 

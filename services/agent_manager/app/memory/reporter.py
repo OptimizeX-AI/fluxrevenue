@@ -1,6 +1,6 @@
 import json
 import logging
-from message_broker.rabbitmq_client import RabbitMQClient
+from services.message_broker.rabbitmq_client import RabbitMQClient
 
 logger = logging.getLogger(__name__)
 
