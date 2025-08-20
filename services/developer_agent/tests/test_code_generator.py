@@ -26,7 +26,7 @@ def test_generate_fastapi_endpoint_file_creation_and_content(cleanup_workspace):
     generated_file_path = generate_fastapi_endpoint(project_name, task_description)
 
     # 2. Assert that the file was created at the expected path
-    expected_dir = os.path.join(WORKSPACE_DIR, "test_project")
+    expected_dir = os.path.join(WORKSPACE_DIR, "TestProject")
     expected_filename = "users_routes.py"
     assert os.path.dirname(generated_file_path) == expected_dir
     assert os.path.basename(generated_file_path) == expected_filename
@@ -42,18 +42,45 @@ def test_generate_fastapi_endpoint_file_creation_and_content(cleanup_workspace):
     assert 'def read_users():' in content
     assert 'return {"message": "Endpoint for users is active"}' in content
 
+from services.developer_agent.app.core.exceptions import CodeGenerationError
+
 def test_code_generator_sanitizes_project_name(cleanup_workspace):
     """
-    Tests that the project name is sanitized to create a valid directory name.
+    Tests that the project name is sanitized to create a valid directory name
+    based on the new regex rule.
     """
-    project_name = "Invalid Project Name!!"
+    project_name = "Invalid Project Name!@#$%^"
     task_description = "Develop REST API endpoints for features: items"
 
     generated_file_path = generate_fastapi_endpoint(project_name, task_description)
 
     # Check that the directory created uses the sanitized name
-    sanitized_name = project_name.replace(" ", "_").lower()
-    expected_dir = os.path.join(WORKSPACE_DIR, sanitized_name)
-
+    expected_dir = os.path.join(WORKSPACE_DIR, "InvalidProjectName")
     assert os.path.exists(expected_dir)
     assert os.path.dirname(generated_file_path) == expected_dir
+
+def test_path_traversal_is_prevented(cleanup_workspace):
+    """
+    Tests that a malicious project name attempting path traversal is caught.
+    """
+    # This malicious name tries to write outside the workspace
+    malicious_project_name = "../../etc/malicious_project"
+    task_description = "A task"
+
+    # The new sanitization should strip all traversal characters,
+    # leaving a safe name.
+    generated_file_path = generate_fastapi_endpoint(malicious_project_name, task_description)
+    expected_dir = os.path.join(WORKSPACE_DIR, "etcmalicious_project")
+    assert os.path.exists(expected_dir)
+
+def test_empty_project_name_after_sanitization_raises_error(cleanup_workspace):
+    """
+    Tests that if sanitization results in an empty string, an error is raised.
+    """
+    malicious_project_name = ".././../"
+    task_description = "A task"
+
+    with pytest.raises(CodeGenerationError) as excinfo:
+        generate_fastapi_endpoint(malicious_project_name, task_description)
+
+    assert "invalid or empty after sanitization" in str(excinfo.value)

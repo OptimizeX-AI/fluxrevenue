@@ -7,6 +7,9 @@ class CriticalAnalysis:
     """
     A generic class for agents to critically analyze their own output
     before considering a task complete.
+    # TODO: This is a generic base class. Each agent should extend this
+    # with specific, meaningful validation rules in the _load_validation_rules method.
+    # The suggest_improvements method is also a simple placeholder.
     """
     def __init__(self, agent_name: str, agent_type: str):
         self.agent_name = agent_name

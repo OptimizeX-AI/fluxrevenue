@@ -8,11 +8,8 @@ import random
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-# Add parent directory to path to import shared services
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from message_broker.rabbitmq_client import RabbitMQClient
-from tracing import setup_tracer
+from services.message_broker.rabbitmq_client import RabbitMQClient
+from services.tracing import setup_tracer
 
 # OpenTelemetry and Prometheus instrumentation
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -27,7 +24,7 @@ HEARTBEAT_INTERVAL = 30 # Reduced for faster demo of health checking
 
 # --- Tracer and Logger Setup ---
 setup_tracer(AGENT_NAME)
-from services.developer_agent.app.core.config import setup_logging
+from .core.config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -36,6 +33,7 @@ logger = logging.getLogger(__name__)
 rabbitmq_client: RabbitMQClient
 heartbeat_thread: threading.Thread
 stop_heartbeat = threading.Event()
+main_loop: asyncio.AbstractEventLoop
 
 
 def register_with_registry():
@@ -80,13 +78,16 @@ def heartbeat_loop():
 
 def task_consumer_callback(message: dict):
     """Callback to process tasks received from RabbitMQ."""
-    from services.developer_agent.app.task_processor import process_development_task
-    from services.developer_agent.app.core.exceptions import BaseAgentException
+    from .task_processor import process_development_task
+    from .core.exceptions import BaseAgentException
     try:
         task_data = message.get('payload')
         logger.info("Received new development task.", extra={"props": {"task_id": task_data.get("task_id")}})
 
-        asyncio.run(process_development_task(task_data, rabbitmq_client)) # Pass client
+        # Safely schedule the async task on the main event loop from the consumer thread
+        asyncio.run_coroutine_threadsafe(
+            process_development_task(task_data, rabbitmq_client), main_loop
+        )
     except json.JSONDecodeError:
         logger.error("Failed to decode JSON from RabbitMQ message.", extra={"props": {"raw_message": message}})
     except BaseAgentException as e:
@@ -100,7 +101,8 @@ async def lifespan(app: FastAPI):
     """Lifespan manager to handle startup and shutdown events."""
     logger.info(f"{AGENT_NAME} is starting up.")
 
-    global rabbitmq_client, heartbeat_thread
+    global rabbitmq_client, heartbeat_thread, main_loop
+    main_loop = asyncio.get_running_loop()
     rabbitmq_client = RabbitMQClient(
         host=os.getenv("RABBITMQ_HOST", "localhost"),
         username=os.getenv("RABBITMQ_DEFAULT_USER", "user"),

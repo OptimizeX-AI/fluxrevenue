@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from services.developer_agent.app.core.exceptions import CodeGenerationError
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,13 @@ def generate_fastapi_endpoint(project_name: str, task_description: str) -> str:
     logger.info("Starting code generation for FastAPI endpoint.", extra={"props": {"project": project_name}})
 
     try:
-        # Sanitize project_name to be a valid directory name
-        project_dir_name = project_name.replace(" ", "_").lower()
-        project_path = os.path.join(WORKSPACE_DIR, project_dir_name)
+        # Sanitize project_name to prevent path traversal.
+        # Only allow alphanumeric characters, underscores, and hyphens.
+        sane_project_name = re.sub(r'[^a-zA-Z0-9_-]', '', project_name)
+        if not sane_project_name:
+            raise CodeGenerationError(message="Project name is invalid or empty after sanitization.")
+
+        project_path = os.path.join(WORKSPACE_DIR, sane_project_name)
 
         # Create the project directory if it doesn't exist
         os.makedirs(project_path, exist_ok=True)
